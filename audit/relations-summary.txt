@@ -1,0 +1,20 @@
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  // Ownership relationships
+  ownedAssets     Ownership[] @relation("OwnerEntity")
+  ownedEntities   Ownership[] @relation("OwnedEntityRelation")
+  assetType AssetType @relation(fields: [assetTypeId], references: [id])
+  // Ownership and valuation relationships
+// Ownership relationships between entities and assets/entities
+  ownerEntity  Entity  @relation("OwnerEntity", fields: [ownerEntityId], references: [id], onDelete: Cascade)
+  ownedAsset   Asset?  @relation(fields: [ownedAssetId], references: [id], onDelete: Cascade)
+  ownedEntity  Entity? @relation("OwnedEntityRelation", fields: [ownedEntityId], references: [id], onDelete: Cascade)
+  asset Asset @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  asset           Asset            @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  debt              Debt      @relation(fields: [debtId], references: [id], onDelete: Cascade)
+  user         User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  alert Alert @relation(fields: [alertId], references: [id], onDelete: Cascade)

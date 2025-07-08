@@ -1,0 +1,24 @@
+Images space usage:
+
+REPOSITORY       TAG         IMAGE ID       CREATED         SIZE      SHARED SIZE   UNIQUE SIZE   CONTAINERS
+dpage/pgadmin4   latest      2a830466aafd   10 days ago     812MB     9.179MB       802.7MB       0
+postgres         15-alpine   2985f77749c7   4 weeks ago     379MB     9.179MB       369.8MB       1
+redis            7-alpine    ee9e8748ace0   5 weeks ago     61.4MB    0B            61.44MB       1
+adminer          4.8.1       34d37131366c   11 months ago   365MB     0B            365.4MB       0
+
+Containers space usage:
+
+CONTAINER ID   IMAGE                COMMAND                  LOCAL VOLUMES   SIZE      CREATED       STATUS                       NAMES
+bd7cb4c76042   postgres:15-alpine   "docker-entrypoint.s…"   1               20.5kB    2 hours ago   Up About an hour (healthy)   patrimoine-postgres
+99ab88a2684e   redis:7-alpine       "docker-entrypoint.s…"   1               24.6kB    2 hours ago   Up About an hour (healthy)   patrimoine-redis
+
+Local Volumes space usage:
+
+VOLUME NAME                         LINKS     SIZE
+gestiondepatrimoine_postgres_data   1         66.61MB
+gestiondepatrimoine_redis_data      1         88B
+patrimoine-v2_postgres_data         0         64.44MB
+
+Build cache usage: 0B
+
+CACHE ID   CACHE TYPE   SIZE      CREATED   LAST USED   USAGE     SHARED

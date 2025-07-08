@@ -1,0 +1,575 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// NextAuth.js models
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String    @unique
+  emailVerified DateTime?
+  image         String?
+  password      String?   // For email/password authentication
+  firstName     String?
+  lastName      String?
+  role          String    @default("user")
+  isActive      Boolean   @default(true)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  accounts          Account[]
+  sessions          Session[]
+  entities          Entity[]
+  bridgeConnections BridgeConnection[]
+  bridgeAccounts    BridgeAccount[]
+  alerts            Alert[]
+  alertPreferences  AlertPreferences[]
+  taxProfile        TaxProfile?
+  taxOptimizations  TaxOptimization[]
+  taxSimulations    TaxSimulation[]
+  taxCalculations   TaxCalculation[]
+  userBehavior      UserBehavior?
+  dashboardLayouts  DashboardLayout[]
+  dashboardSuggestions DashboardSuggestion[]
+  widgetInteractions WidgetInteraction[]
+
+  @@map("users")
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@map("accounts")
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("sessions")
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+  @@map("verification_tokens")
+}
+
+// Wealth Management Models
+
+// Asset Types for categorization
+model AssetType {
+  id          String   @id @default(cuid())
+  name        String   @unique // e.g., "Real Estate", "Stocks", "Bank Account", "Precious Objects"
+  code        String?  @unique // e.g., "real_estate", "stocks", "bank_account"
+  category    String   @default("OTHER") // REAL_ESTATE, FINANCIAL, PRECIOUS, VEHICLE, OTHER
+  description String?
+  icon        String?  // Icon identifier for UI
+  color       String?  // Color for charts
+  fields      Json?    // Dynamic form fields configuration
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  assets Asset[]
+
+  @@map("asset_types")
+}
+
+// Entities: Physical persons and legal entities
+model Entity {
+  id        String     @id @default(cuid())
+  userId    String
+  type      EntityType // PHYSICAL_PERSON, LEGAL_ENTITY
+  name      String
+  taxId     String?    // Tax identification number
+  address   Json?      // Structured address data
+  metadata  Json?      // Additional entity-specific data (business purpose for legal entities, etc.)
+  notes     String?    // Notes about the entity
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Ownership relationships
+  ownedAssets     Ownership[] @relation("OwnerEntity")
+  ownedEntities   Ownership[] @relation("OwnedEntityRelation")
+
+  @@map("entities")
+}
+
+// Assets: All types of wealth components
+model Asset {
+  id           String   @id @default(cuid())
+  assetTypeId  String
+  name         String
+  description  String?
+  metadata     Json?    // Asset-specific data (location, ISIN, etc.)
+  externalId   String?  // External API identifier
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  assetType AssetType @relation(fields: [assetTypeId], references: [id])
+
+  // Ownership and valuation relationships
+  ownerships  Ownership[]
+  valuations  Valuation[]
+  debts       Debt[]
+
+  @@map("assets")
+}
+
+// Ownership relationships between entities and assets/entities
+model Ownership {
+  id             String    @id @default(cuid())
+  ownerEntityId  String    // The entity that owns
+  ownedAssetId   String?   // The asset being owned (optional)
+  ownedEntityId  String?   // The entity being owned (optional)
+  percentage     Decimal   @db.Decimal(5,4) // Ownership percentage avec précision PostgreSQL
+  startDate      DateTime?
+  endDate        DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  ownerEntity  Entity  @relation("OwnerEntity", fields: [ownerEntityId], references: [id], onDelete: Cascade)
+  ownedAsset   Asset?  @relation(fields: [ownedAssetId], references: [id], onDelete: Cascade)
+  ownedEntity  Entity? @relation("OwnedEntityRelation", fields: [ownedEntityId], references: [id], onDelete: Cascade)
+
+  @@map("ownerships")
+}
+
+// Asset valuations over time
+model Valuation {
+  id            String          @id @default(cuid())
+  assetId       String
+  value         Decimal         @db.Decimal(15,2) // Valeur monétaire avec précision PostgreSQL
+  currency      String          @default("EUR")
+  valuationDate DateTime        @db.Timestamptz // Timestamp avec timezone
+  source        ValuationSource @default(MANUAL)
+  notes         String?
+  metadata      Json?           // Additional data from APIs (price per share, volume, etc.)
+  createdAt     DateTime        @default(now()) @db.Timestamptz
+  updatedAt     DateTime        @updatedAt @db.Timestamptz
+
+  asset Asset @relation(fields: [assetId], references: [id], onDelete: Cascade)
+
+  @@unique([assetId, valuationDate, source])
+  @@index([valuationDate])
+  @@index([assetId, valuationDate])
+  @@map("valuations")
+}
+
+// API Integrations Models
+
+// Bridge API - Banking Aggregator
+model BridgeConnection {
+  id           String   @id @default(cuid())
+  userId       String
+  accessToken  String
+  refreshToken String
+  expiresAt    DateTime @db.Timestamptz
+  bankId       String?  // Bridge bank identifier
+  bankName     String?  // Bank name for display
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now()) @db.Timestamptz
+  updatedAt    DateTime @updatedAt @db.Timestamptz
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("bridge_connections")
+}
+
+model BridgeAccount {
+  id               String    @id @default(cuid())
+  userId           String
+  bridgeAccountId  String    @unique // Bridge API account ID
+  name             String
+  balance          Decimal   @db.Decimal(15,2)
+  currency         String    @default("EUR")
+  type             String    // checking, savings, credit_card, loan, investment
+  iban             String?
+  bankId           String?   // Bridge bank ID
+  bankName         String?   // Bank name for display
+  lastSyncAt       DateTime? @db.Timestamptz
+  isActive         Boolean   @default(true)
+  createdAt        DateTime  @default(now()) @db.Timestamptz
+  updatedAt        DateTime  @updatedAt @db.Timestamptz
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("bridge_accounts")
+}
+
+// Asset Type Categories
+model AssetTypeCategory {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  description String?
+  color       String?
+  icon        String?
+  createdAt   DateTime @default(now()) @db.Timestamptz
+  updatedAt   DateTime @updatedAt @db.Timestamptz
+
+  @@map("asset_type_categories")
+}
+
+// Enums
+enum EntityType {
+  PHYSICAL_PERSON
+  LEGAL_ENTITY
+}
+
+enum ValuationSource {
+  MANUAL
+  API_BANK
+  API_STOCK
+  API_REAL_ESTATE
+  SYSTEM
+  BRIDGE_API
+  YAHOO_FINANCE
+  YAHOO_FINANCE_HISTORICAL
+}
+
+// Debt and financing models
+model Debt {
+  id              String           @id @default(cuid())
+  assetId         String
+  name            String
+  debtType        DebtType         @default(LOAN)
+  initialAmount   Decimal          @db.Decimal(15,2)
+  currentAmount   Decimal          @db.Decimal(15,2)
+  interestRate    Decimal          @db.Decimal(5,4) // Taux d'intérêt annuel en %
+  duration        Int              // Durée en mois
+  amortizationType AmortizationType @default(PROGRESSIVE)
+  startDate       DateTime         @db.Timestamptz
+  endDate         DateTime         @db.Timestamptz
+  monthlyPayment  Decimal?         @db.Decimal(15,2) // Mensualité (calculée ou fixe)
+  currency        String           @default("EUR")
+  lender          String?          // Nom du prêteur
+  notes           String?
+  createdAt       DateTime         @default(now()) @db.Timestamptz
+  updatedAt       DateTime         @updatedAt @db.Timestamptz
+
+  asset           Asset            @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  payments        DebtPayment[]
+
+  @@map("debts")
+}
+
+model DebtPayment {
+  id                String    @id @default(cuid())
+  debtId            String
+  paymentNumber     Int       // Numéro de l'échéance
+  paymentDate       DateTime  @db.Timestamptz // Date prévue de paiement
+  totalAmount       Decimal   @db.Decimal(15,2) // Montant total de l'échéance
+  principalAmount   Decimal   @db.Decimal(15,2) // Part du capital
+  interestAmount    Decimal   @db.Decimal(15,2) // Part des intérêts
+  remainingBalance  Decimal   @db.Decimal(15,2) // Capital restant dû après paiement
+  isPaid            Boolean   @default(false)
+  actualPaymentDate DateTime? @db.Timestamptz // Date réelle de paiement
+  createdAt         DateTime  @default(now()) @db.Timestamptz
+  updatedAt         DateTime  @updatedAt @db.Timestamptz
+
+  debt              Debt      @relation(fields: [debtId], references: [id], onDelete: Cascade)
+
+  @@map("debt_payments")
+}
+
+enum DebtType {
+  LOAN          // Prêt classique
+  MORTGAGE      // Prêt immobilier
+  CREDIT_LINE   // Ligne de crédit
+  BOND          // Obligation
+  OTHER         // Autre
+}
+
+enum AmortizationType {
+  PROGRESSIVE   // Amortissement progressif (mensualités constantes)
+  LINEAR        // Amortissement linéaire (capital constant)
+  IN_FINE       // Remboursement in fine
+  BULLET        // Remboursement bullet
+}
+
+// Système d'alertes intelligentes
+model Alert {
+  id           String   @id @default(cuid())
+  userId       String
+  type         String   // 'concentration_risk', 'performance_anomaly', etc.
+  severity     String   // 'critical', 'high', 'medium', 'low'
+  title        String
+  message      String
+  data         Json?
+  status       String   @default("new") // 'new', 'read', 'snoozed', 'dismissed'
+  actions      Json?
+  createdAt    DateTime @default(now()) @db.Timestamptz
+  readAt       DateTime? @db.Timestamptz
+  snoozedUntil DateTime? @db.Timestamptz
+  dismissedAt  DateTime? @db.Timestamptz
+  updatedAt    DateTime @updatedAt @db.Timestamptz
+
+  user         User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  alertActions AlertAction[]
+
+  @@index([userId])
+  @@index([type])
+  @@index([severity])
+  @@index([status])
+  @@index([createdAt])
+  @@map("alerts")
+}
+
+model AlertPreferences {
+  id           String   @id @default(cuid())
+  userId       String
+  alertType    String   // 'concentration_risk', 'performance_anomaly', etc.
+  enabled      Boolean  @default(true)
+  threshold    Decimal? @db.Decimal(10,4)
+  frequency    String   @default("immediate") // 'immediate', 'daily', 'weekly', 'never'
+  emailEnabled Boolean  @default(true)
+  pushEnabled  Boolean  @default(true)
+  createdAt    DateTime @default(now()) @db.Timestamptz
+  updatedAt    DateTime @updatedAt @db.Timestamptz
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, alertType])
+  @@map("alert_preferences")
+}
+
+model AlertAction {
+  id        String   @id @default(cuid())
+  alertId   String
+  action    String
+  timestamp DateTime @default(now()) @db.Timestamptz
+  metadata  Json?
+
+  alert Alert @relation(fields: [alertId], references: [id], onDelete: Cascade)
+
+  @@index([alertId])
+  @@map("alert_actions")
+}
+
+// Modèles pour l'optimisation fiscale
+model TaxProfile {
+  id        String   @id @default(cuid())
+  userId    String   @unique
+  
+  // Profil fiscal
+  tmi       Decimal  @db.Decimal(5,4) // Tranche marginale d'imposition
+  foyer     String   // 'single', 'married', 'pacs'
+  nbParts   Decimal  @db.Decimal(3,2) // Nombre de parts fiscales
+  income    Decimal  @db.Decimal(15,2) // Revenus annuels
+  
+  // Préférences d'optimisation
+  riskTolerance     String   // 'low', 'medium', 'high'
+  optimizationGoals Json?    // ['reduce_IR', 'reduce_IFI', 'transmission', etc.]
+  
+  createdAt DateTime @default(now()) @db.Timestamptz
+  updatedAt DateTime @updatedAt @db.Timestamptz
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("tax_profiles")
+}
+
+model TaxOptimization {
+  id          String   @id @default(cuid())
+  userId      String
+  
+  strategyId  String   // ID de la stratégie d'optimisation
+  name        String   // Nom de la stratégie
+  category    String   // 'PER', 'deficitFoncier', 'donation', etc.
+  
+  // Données de l'optimisation
+  estimatedSavings Decimal @db.Decimal(15,2)
+  actualSavings    Decimal? @db.Decimal(15,2)
+  status          String   // 'proposed', 'in_progress', 'completed', 'dismissed'
+  
+  // Métadonnées
+  data        Json?    // Données spécifiques à la stratégie
+  notes       String?
+  
+  // Suivi
+  proposedAt  DateTime @default(now()) @db.Timestamptz
+  startedAt   DateTime? @db.Timestamptz
+  completedAt DateTime? @db.Timestamptz
+  
+  createdAt   DateTime @default(now()) @db.Timestamptz
+  updatedAt   DateTime @updatedAt @db.Timestamptz
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([category])
+  @@index([status])
+  @@map("tax_optimizations")
+}
+
+model TaxSimulation {
+  id        String   @id @default(cuid())
+  userId    String
+  
+  // Paramètres de simulation
+  scenarios Json     // Scénarios testés
+  results   Json     // Résultats de simulation
+  
+  createdAt DateTime @default(now()) @db.Timestamptz
+  updatedAt DateTime @updatedAt @db.Timestamptz
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("tax_simulations")
+}
+
+model TaxCalculation {
+  id        String   @id @default(cuid())
+  userId    String
+  
+  // Calculs fiscaux
+  taxYear   Int      // Année fiscale
+  IR        Decimal  @db.Decimal(15,2) // Impôt sur le revenu
+  IFI       Decimal  @db.Decimal(15,2) // Impôt sur la fortune immobilière
+  plusValues Decimal @db.Decimal(15,2) // Plus-values
+  prelevementsSociaux Decimal @db.Decimal(15,2) // Prélèvements sociaux
+  taxeFonciere Decimal @db.Decimal(15,2) // Taxe foncière
+  total     Decimal  @db.Decimal(15,2) // Total des impôts
+  
+  // Contexte patrimonial
+  patrimonySnapshot Json // Snapshot du patrimoine au moment du calcul
+  
+  createdAt DateTime @default(now()) @db.Timestamptz
+  updatedAt DateTime @updatedAt @db.Timestamptz
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, taxYear])
+  @@map("tax_calculations")
+}
+
+// Dashboard Adaptive - User Behavior Tracking
+model UserBehavior {
+  id                    String   @id @default(cuid())
+  userId                String   @unique
+  widgetInteractions    Json     // Record<string, WidgetInteraction>
+  sessionDuration       Int      @default(0)
+  mostViewedWidgets     String   @default("[]")
+  leastViewedWidgets    String   @default("[]")
+  preferredLayout       String   @default("extended") // 'compact' | 'extended' | 'custom'
+  lastActiveDate        DateTime @default(now()) @db.Timestamptz
+  totalSessions         Int      @default(0)
+  averageSessionTime    Decimal  @default(0) @db.Decimal(10,2)
+  behaviorCluster       String   @default("beginner") // 'conservative' | 'balanced' | 'aggressive' | 'trader' | 'beginner'
+  preferences           Json     // UserPreferences
+  createdAt             DateTime @default(now()) @db.Timestamptz
+  updatedAt             DateTime @updatedAt @db.Timestamptz
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("user_behaviors")
+}
+
+// Dashboard Layouts
+model DashboardLayout {
+  id          String    @id @default(cuid())
+  userId      String
+  name        String
+  widgets     Json      // Configuration des widgets
+  breakpoints Json      // Configuration responsive
+  isActive    Boolean   @default(false)
+  isDefault   Boolean   @default(false)
+  createdAt   DateTime  @default(now()) @db.Timestamptz
+  updatedAt   DateTime  @updatedAt @db.Timestamptz
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, name])
+  @@index([userId, isActive])
+  @@map("dashboard_layouts")
+}
+
+// Dashboard Suggestions
+model DashboardSuggestion {
+  id          String   @id @default(cuid())
+  userId      String
+  type        String   // 'widget_suggestion', 'layout_optimization', etc.
+  title       String
+  description String
+  impact      String   // 'high', 'medium', 'low'
+  confidence  Decimal  @db.Decimal(3,2) // 0.00 to 1.00
+  data        Json?    // Données spécifiques à la suggestion
+  actions     Json?    // Actions possibles
+  isRead      Boolean  @default(false)
+  isDismissed Boolean  @default(false)
+  createdAt   DateTime @default(now()) @db.Timestamptz
+  updatedAt   DateTime @updatedAt @db.Timestamptz
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, isDismissed])
+  @@index([createdAt])
+  @@map("dashboard_suggestions")
+}
+
+// Widget Interactions
+model WidgetInteraction {
+  id         String   @id @default(cuid())
+  userId     String
+  widgetId   String
+  action     String   // 'view', 'click', 'hover', 'resize', 'move'
+  duration   Int?     // En millisecondes
+  metadata   Json?    // Données additionnelles
+  timestamp  DateTime @default(now()) @db.Timestamptz
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, widgetId])
+  @@index([timestamp])
+  @@map("widget_interactions")
+}
+
+// Dashboard Analytics
+model DashboardAnalytics {
+  id                  String   @id @default(cuid())
+  date                DateTime @db.Date
+  totalUsers          Int      @default(0)
+  activeUsers         Int      @default(0)
+  averageSessionTime  Decimal  @db.Decimal(10,2) @default(0)
+  mostUsedWidgets     Json     // Array of { widgetId, count }
+  layoutDistribution  Json     // Layout usage statistics
+  deviceBreakdown     Json     // Desktop, tablet, mobile usage
+  createdAt           DateTime @default(now()) @db.Timestamptz
+  updatedAt           DateTime @updatedAt @db.Timestamptz
+
+  @@unique([date])
+  @@index([date])
+  @@map("dashboard_analytics")
+}

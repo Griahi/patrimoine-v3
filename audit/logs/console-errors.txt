@@ -1,0 +1,21 @@
+./prisma/seed.ts:415:    console.error(e)
+./src/middleware/ai-middleware.ts:129:    console.error('AI Auth middleware error:', error);
+./src/middleware/ai-middleware.ts:162:    console.error('AI Context middleware error:', error);
+./src/middleware/ai-middleware.ts:183:    recordRequestMetrics(req, res, responseTime).catch(console.error);
+./src/middleware/ai-middleware.ts:238:  console.error('AI Service Error:', {
+./src/middleware/ai-middleware.ts:294:    console.error('AI Health check failed:', error);
+./src/middleware/ai-middleware.ts:412:    console.error('Failed to record metrics:', error);
+./src/app/loans/page.tsx:92:      console.error("Error fetching debts:", error)
+./src/app/dev-access/page.tsx:90:      console.error('Error:', error)
+./src/app/dev-access/page.tsx:128:                  console.error('API Test Error:', error)
+./src/app/dashboard/predictions/page.tsx:155:      console.error('❌ Server-side prediction error:', err);
+./src/app/api/debts/route.ts:67:    console.error('❌ Erreur lors de la récupération des dettes:', error);
+./src/app/api/debts/route.ts:140:      console.error('❌ Prisma failed, cannot create debt:', error instanceof Error ? error.message : 'Unknown error');
+./src/app/api/debts/route.ts:147:    console.error('❌ Erreur lors de la création de la dette:', error)
+./src/app/api/auth/quick-access/route.ts:41:    console.error('❌ Erreur lors de la création de l\'accès rapide:', error)
+./src/app/api/auth/quick-access/route.ts:42:    console.error('📋 Error details:', {
+./src/app/api/auth/signout/route.ts:43:    console.error('🚨 Erreur lors de la déconnexion:', error)
+./src/app/api/auth/signin/route.ts:123:    console.error('🚨 Erreur lors de la connexion:', error)
+./src/app/api/auth/clear-quick-access/route.ts:20:    console.error('Erreur lors de la suppression de l\'accès rapide:', error)
+./src/app/api/tax/analysis/[userId]/route.ts:22:    console.error('Tax analysis error:', error);
+xargs: grep: terminated with signal 13; aborting

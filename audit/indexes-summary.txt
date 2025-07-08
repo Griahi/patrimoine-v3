@@ -1,0 +1,34 @@
+  email         String    @unique
+  @@unique([provider, providerAccountId])
+  sessionToken String   @unique
+  token      String   @unique
+  @@unique([identifier, token])
+  name        String   @unique // e.g., "Real Estate", "Stocks", "Bank Account", "Precious Objects"
+  code        String?  @unique // e.g., "real_estate", "stocks", "bank_account"
+  @@unique([assetId, valuationDate, source])
+  @@index([valuationDate])
+  @@index([assetId, valuationDate])
+  bridgeAccountId  String    @unique // Bridge API account ID
+  name        String   @unique
+  @@index([userId])
+  @@index([type])
+  @@index([severity])
+  @@index([status])
+  @@index([createdAt])
+  @@unique([userId, alertType])
+  @@index([alertId])
+  userId    String   @unique
+  @@index([userId])
+  @@index([category])
+  @@index([status])
+  @@index([userId])
+  @@index([userId, taxYear])
+  userId                String   @unique
+  @@unique([userId, name])
+  @@index([userId, isActive])
+  @@index([userId, isDismissed])
+  @@index([createdAt])
+  @@index([userId, widgetId])
+  @@index([timestamp])
+  @@unique([date])
+  @@index([date])

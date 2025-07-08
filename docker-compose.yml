@@ -1,0 +1,113 @@
+version: '3.8'
+
+services:
+  # PostgreSQL 15 - Base de données principale
+  postgres:
+    image: postgres:15-alpine
+    container_name: patrimoine-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: patrimoine
+      POSTGRES_USER: patrimoine_user
+      POSTGRES_PASSWORD: patrimoine_password_2024
+      POSTGRES_INITDB_ARGS: "--auth-host=scram-sha-256"
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./docker/postgres/init:/docker-entrypoint-initdb.d
+    command: >
+      postgres 
+      -c shared_preload_libraries=pg_stat_statements
+      -c pg_stat_statements.max=10000
+      -c pg_stat_statements.track=all
+      -c max_connections=200
+      -c shared_buffers=256MB
+      -c effective_cache_size=1GB
+      -c maintenance_work_mem=64MB
+      -c checkpoint_completion_target=0.9
+      -c wal_buffers=16MB
+      -c default_statistics_target=100
+      -c random_page_cost=1.1
+      -c effective_io_concurrency=200
+      -c work_mem=4MB
+      -c min_wal_size=1GB
+      -c max_wal_size=4GB
+      -c max_worker_processes=4
+      -c max_parallel_workers_per_gather=2
+      -c max_parallel_workers=4
+      -c max_parallel_maintenance_workers=2
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U patrimoine_user -d patrimoine"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    networks:
+      - patrimoine-network
+
+  # Redis - Cache et queues
+  redis:
+    image: redis:7-alpine
+    container_name: patrimoine-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+      - ./docker/redis/redis.conf:/usr/local/etc/redis/redis.conf
+    command: redis-server /usr/local/etc/redis/redis.conf
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    networks:
+      - patrimoine-network
+
+  # Adminer - Interface de gestion DB
+  adminer:
+    image: adminer:4.8.1
+    container_name: patrimoine-adminer
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      ADMINER_DEFAULT_SERVER: postgres
+      ADMINER_DESIGN: pepa-linha
+    depends_on:
+      - postgres
+    networks:
+      - patrimoine-network
+
+  # pgAdmin 4 - Interface PostgreSQL avancée (optionnel)
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: patrimoine-pgadmin
+    restart: unless-stopped
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@patrimoine.local
+      PGADMIN_DEFAULT_PASSWORD: admin123
+      PGADMIN_CONFIG_SERVER_MODE: 'False'
+    ports:
+      - "5050:80"
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+    depends_on:
+      - postgres
+    networks:
+      - patrimoine-network
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+  pgadmin_data:
+    driver: local
+
+networks:
+  patrimoine-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16 

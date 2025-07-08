@@ -1,0 +1,20 @@
+./src/middleware/ai-middleware.ts:101:    origin: process.env.FRONTEND_URL || 'http://localhost:3000',
+./src/app/diagnostics/page.tsx:153:    value: process.env[varName] ? 'Défini' : 'Manquant',
+./src/app/diagnostics/page.tsx:154:    present: !!process.env[varName]
+./src/app/api/health/route.ts:111:    // En production, vous pourriez lire depuis process.env.npm_package_version
+./src/app/api/health/route.ts:112:    return process.env.npm_package_version || '1.0.0'
+./src/app/api/integrations/bridge/auth/route.ts:13:      secret: process.env.NEXTAUTH_SECRET 
+./src/app/api/integrations/bridge/auth/route.ts:35:      secret: process.env.NEXTAUTH_SECRET 
+./src/app/api/integrations/yahoo-finance/sync/route.ts:12:      secret: process.env.NEXTAUTH_SECRET 
+./src/config/ai.config.ts:197:    apiKey: process.env.OPENAI_API_KEY || '',
+./src/config/ai.config.ts:198:    organization: process.env.OPENAI_ORGANIZATION || undefined,
+./src/config/ai.config.ts:199:    model: process.env.OPENAI_MODEL || 'gpt-4-turbo-preview',
+./src/config/ai.config.ts:200:    temperature: parseFloat(process.env.AI_TEMPERATURE || '0.7'),
+./src/config/ai.config.ts:201:    maxTokens: parseInt(process.env.AI_MAX_TOKENS || '2000'),
+./src/config/ai.config.ts:202:    topP: parseFloat(process.env.AI_TOP_P || '0.9'),
+./src/config/ai.config.ts:203:    frequencyPenalty: parseFloat(process.env.AI_FREQUENCY_PENALTY || '0.0'),
+./src/config/ai.config.ts:204:    presencePenalty: parseFloat(process.env.AI_PRESENCE_PENALTY || '0.0'),
+./src/config/ai.config.ts:205:    timeout: parseInt(process.env.AI_TIMEOUT || '30000'),
+./src/config/ai.config.ts:206:    maxRetries: parseInt(process.env.AI_MAX_RETRIES || '3'),
+./src/config/ai.config.ts:207:    backoffFactor: parseFloat(process.env.AI_BACKOFF_FACTOR || '2.0'),
+./src/config/ai.config.ts:211:    defaultHorizon: parseInt(process.env.PREDICTIONS_DEFAULT_HORIZON || '365'),
