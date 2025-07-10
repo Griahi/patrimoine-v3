@@ -2,11 +2,11 @@ import React from 'react';
 import { Euro, BarChart3, TrendingUp, Users } from 'lucide-react';
 import { MetricCard } from './MetricCard';
 import { EntitySelector } from './EntitySelector';
-import { PatrimoineMetrics, EntityForTreemap } from '@/utils/treemap-calculations';
+import { PatrimoineMetrics, EntityForFinancial } from '@/utils/financial-utils';
 
 interface PatrimoineHeaderProps {
   data: PatrimoineMetrics;
-  entities: EntityForTreemap[];
+  entities: EntityForFinancial[];
   selectedEntityIds: string[];
   onEntityChange: (entityIds: string[]) => void;
   loading?: boolean;

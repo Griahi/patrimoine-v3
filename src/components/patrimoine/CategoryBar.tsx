@@ -1,7 +1,7 @@
 import React from 'react';
 import { Card, CardContent } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
-import { CategoryData, formatTreemapValue, formatPercentage } from '@/utils/treemap-calculations';
+import { CategoryData, formatFinancialValue, formatPercentage } from '@/utils/financial-utils';
 
 interface CategoryBarProps {
   categories: CategoryData[];
@@ -48,7 +48,7 @@ export function CategoryBar({ categories, onCategoryClick }: CategoryBarProps) {
                 
                 <div className="flex items-center justify-between">
                   <span className="text-sm font-semibold text-gray-700">
-                    {formatTreemapValue(category.montant)}
+                    {formatFinancialValue(category.montant)}
                   </span>
                   <span className="text-xs text-gray-500">
                     {formatPercentage(category.pourcentage)} du patrimoine
@@ -69,7 +69,7 @@ export function CategoryBar({ categories, onCategoryClick }: CategoryBarProps) {
               {categories.reduce((sum, cat) => sum + cat.nombreActifs, 0)} actif{categories.reduce((sum, cat) => sum + cat.nombreActifs, 0) > 1 ? 's' : ''}
             </span>
             <span>
-              {formatTreemapValue(categories.reduce((sum, cat) => sum + cat.montant, 0))}
+              {formatFinancialValue(categories.reduce((sum, cat) => sum + cat.montant, 0))}
             </span>
           </div>
         </div>

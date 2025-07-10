@@ -29,13 +29,13 @@ import {
 import EntityFilter from "@/components/dashboard/EntityFilter"
 import { useDashboardEntityFilter } from "@/hooks/useEntityFilter"
 import { PatrimoineChart } from "@/components/charts/PatrimoineChart"
-import { TreemapPatrimoine } from "@/components/patrimoine/TreemapPatrimoine"
+import { PieChartPatrimoine } from "@/components/patrimoine/PieChartPatrimoine"
 import { 
-  processAssetsForTreemap, 
-  AssetForTreemap, 
-  EntityForTreemap,
+  processAssetsForFinancialMetrics, 
+  AssetForFinancial, 
+  EntityForFinancial,
   CategoryData
-} from "@/utils/treemap-calculations"
+} from "@/utils/financial-utils"
 
 interface Entity {
   id: string
@@ -106,7 +106,7 @@ export default function DashboardContent() {
     error: null
   })
   const [hasInitialized, setHasInitialized] = useState(false)
-  const [viewMode, setViewMode] = useState<'pie' | 'treemap'>('treemap')
+  const [viewMode, setViewMode] = useState<'pie' | 'detailed'>('pie')
   
   // Entity filter state
   const {
@@ -482,8 +482,8 @@ export default function DashboardContent() {
     return acc
   }, {} as Record<string, { count: number; value: number; name: string }>)
 
-  // Préparer les données pour le treemap
-  const assetsForTreemap: AssetForTreemap[] = dashboardData.assets.map(asset => ({
+  // Préparer les données financières
+  const assetsForFinancial: AssetForFinancial[] = dashboardData.assets.map(asset => ({
     id: asset.id,
     name: asset.name,
     assetType: {
@@ -508,16 +508,16 @@ export default function DashboardContent() {
     debts: []
   }))
 
-  const entitiesForTreemap: EntityForTreemap[] = dashboardData.entities.map(entity => ({
+  const entitiesForFinancial: EntityForFinancial[] = dashboardData.entities.map(entity => ({
     id: entity.id,
     name: entity.name,
     type: entity.type
   }))
 
-  // Traiter les données pour le treemap
-  const treemapData = processAssetsForTreemap(assetsForTreemap, hasSelection ? selectedEntityIds : [])
+  // Traiter les données financières
+  const financialData = processAssetsForFinancialMetrics(assetsForFinancial, hasSelection ? selectedEntityIds : [])
   
-  // Gérer le clic sur une catégorie du treemap
+  // Gérer le clic sur une catégorie
   const handleCategoryClick = (category: CategoryData) => {
     console.log('Category clicked:', category)
     // Ici on pourrait naviguer vers une page de détail ou ouvrir un modal
@@ -635,9 +635,9 @@ export default function DashboardContent() {
                   <PieChartIcon className="h-4 w-4" />
                 </Button>
                 <Button
-                  variant={viewMode === 'treemap' ? 'default' : 'outline'}
+                  variant={viewMode === 'detailed' ? 'default' : 'outline'}
                   size="sm"
-                  onClick={() => setViewMode('treemap')}
+                  onClick={() => setViewMode('detailed')}
                 >
                   <Building2 className="h-4 w-4" />
                 </Button>
@@ -686,10 +686,10 @@ export default function DashboardContent() {
                     </div>
                   </>
                 ) : (
-                  /* Treemap */
+                  /* Vue détaillée */
                   <div className="h-80">
-                    <TreemapPatrimoine
-                      categories={treemapData.categories}
+                    <PieChartPatrimoine
+                      categories={financialData.categories}
                       title=""
                       height={320}
                       loading={dashboardData.loading}

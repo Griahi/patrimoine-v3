@@ -1,10 +1,10 @@
 import React from 'react';
 import Select from 'react-select';
 import { Users } from 'lucide-react';
-import { EntityForTreemap } from '@/utils/treemap-calculations';
+import { EntityForFinancial } from '@/utils/financial-utils';
 
 interface EntitySelectorProps {
-  entities: EntityForTreemap[];
+  entities: EntityForFinancial[];
   selectedEntityIds: string[];
   onChange: (entityIds: string[]) => void;
   placeholder?: string;
@@ -13,7 +13,7 @@ interface EntitySelectorProps {
 interface SelectOption {
   value: string;
   label: string;
-  entity: EntityForTreemap;
+  entity: EntityForFinancial;
 }
 
 export function EntitySelector({ 

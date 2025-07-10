@@ -1,21 +1,20 @@
 import React, { useMemo } from 'react';
-import { ResponsivePie } from '@nivo/pie';
+import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
 import { 
-  PieChart, 
-  TreeMap, 
+  PieChart as PieChartIcon, 
   RefreshCw, 
   Eye,
   Info
 } from 'lucide-react';
 import { 
   CategoryData, 
-  formatTreemapValue, 
+  formatFinancialValue, 
   formatPercentage,
   calculateDiversificationIndex 
-} from '@/utils/treemap-calculations';
+} from '@/utils/financial-utils';
 
 interface PieChartPatrimoineProps {
   categories: CategoryData[];
@@ -39,51 +38,71 @@ export function PieChartPatrimoine({
   const diversificationIndex = useMemo(() => calculateDiversificationIndex(categories), [categories]);
   const totalValue = useMemo(() => categories.reduce((sum, cat) => sum + cat.montant, 0), [categories]);
 
+  // Transformer les données pour recharts
   const pieData = useMemo(() => {
     return categories.map(category => ({
-      id: category.id,
-      label: category.nom,
+      name: category.nom,
       value: category.montant,
-      color: category.couleur,
       percentage: category.pourcentage,
-      nombreActifs: category.nombreActifs
+      color: category.couleur,
+      nombreActifs: category.nombreActifs,
+      id: category.id
     }));
   }, [categories]);
 
-  const handleSliceClick = (slice: any) => {
+  // Fonction pour tronquer les noms longs
+  const truncateName = (name: string, maxLength: number = 15) => {
+    if (name.length <= maxLength) return name;
+    return name.substring(0, maxLength - 3) + '...';
+  };
+
+  // Fonction pour obtenir un label personnalisé pour le pie chart
+  const renderCustomLabel = ({ name, percentage }: { name: string; percentage: number }) => {
+    if (percentage < 5) return ''; // Ne pas afficher les labels pour les segments < 5%
+    return `${truncateName(name, 12)}: ${percentage.toFixed(1)}%`;
+  };
+
+  // Gestionnaire de clic sur les segments
+  const handleSliceClick = (data: any, index: number) => {
     if (onCategoryClick) {
-      const category = categories.find(cat => cat.id === slice.id);
+      const category = categories.find(cat => cat.nom === data.name);
       if (category) {
         onCategoryClick(category);
       }
     }
   };
 
-  const CustomTooltip = ({ datum }: { datum: any }) => (
-    <div className="bg-white p-3 border border-gray-200 rounded-lg shadow-lg">
-      <div className="flex items-center space-x-2 mb-2">
-        <div 
-          className="w-4 h-4 rounded-full" 
-          style={{ backgroundColor: datum.color }}
-        />
-        <span className="font-semibold text-gray-900">{datum.label}</span>
+  // Tooltip personnalisé
+  const CustomTooltip = ({ active, payload, label }: any) => {
+    if (!active || !payload || !payload.length) return null;
+    
+    const data = payload[0].payload;
+    return (
+      <div className="bg-white p-3 border border-gray-200 rounded-lg shadow-lg">
+        <div className="flex items-center space-x-2 mb-2">
+          <div 
+            className="w-4 h-4 rounded-full" 
+            style={{ backgroundColor: data.color }}
+          />
+          <span className="font-semibold text-gray-900">{data.name}</span>
+        </div>
+        <div className="space-y-1 text-sm">
+          <div className="flex justify-between">
+            <span className="text-gray-600">Valeur:</span>
+            <span className="font-medium">{formatFinancialValue(data.value)}</span>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-gray-600">Pourcentage:</span>
+            <span className="font-medium">{formatPercentage(data.percentage)}</span>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-gray-600">Actifs:</span>
+            <span className="font-medium">{data.nombreActifs}</span>
+          </div>
+        </div>
       </div>
-      <div className="space-y-1 text-sm">
-        <div className="flex justify-between">
-          <span className="text-gray-600">Valeur:</span>
-          <span className="font-medium">{formatTreemapValue(datum.value)}</span>
-        </div>
-        <div className="flex justify-between">
-          <span className="text-gray-600">Pourcentage:</span>
-          <span className="font-medium">{formatPercentage(datum.percentage)}</span>
-        </div>
-        <div className="flex justify-between">
-          <span className="text-gray-600">Actifs:</span>
-          <span className="font-medium">{datum.nombreActifs}</span>
-        </div>
-      </div>
-    </div>
-  );
+    );
+  };
 
   if (loading) {
     return (
@@ -91,7 +110,7 @@ export function PieChartPatrimoine({
         <CardHeader>
           <div className="flex items-center justify-between">
             <CardTitle className="flex items-center space-x-2">
-              <PieChart className="w-5 h-5" />
+              <PieChartIcon className="w-5 h-5" />
               <span>{title}</span>
             </CardTitle>
             <div className="flex space-x-2">
@@ -116,7 +135,7 @@ export function PieChartPatrimoine({
       <Card className="w-full">
         <CardHeader>
           <CardTitle className="flex items-center space-x-2">
-            <PieChart className="w-5 h-5" />
+            <PieChartIcon className="w-5 h-5" />
             <span>{title}</span>
           </CardTitle>
         </CardHeader>
@@ -136,7 +155,7 @@ export function PieChartPatrimoine({
       <CardHeader>
         <div className="flex items-center justify-between">
           <CardTitle className="flex items-center space-x-2">
-            <PieChart className="w-5 h-5" />
+            <PieChartIcon className="w-5 h-5" />
             <span>{title}</span>
           </CardTitle>
           <div className="flex items-center space-x-2">
@@ -153,7 +172,7 @@ export function PieChartPatrimoine({
                 onClick={onToggleView}
                 className="p-2"
               >
-                <TreeMap className="w-4 h-4" />
+                <Info className="w-4 h-4" />
               </Button>
             )}
             {onRefresh && (
@@ -171,76 +190,55 @@ export function PieChartPatrimoine({
       </CardHeader>
       <CardContent>
         <div className="w-full" style={{ height }}>
-          <ResponsivePie
-            data={pieData}
-            margin={{ top: 20, right: 20, bottom: 20, left: 20 }}
-            innerRadius={0.5}
-            padAngle={0.7}
-            cornerRadius={3}
-            activeOuterRadiusOffset={8}
-            borderWidth={1}
-            borderColor={{
-              from: 'color',
-              modifiers: [['darker', 0.2]]
-            }}
-            arcLinkLabelsSkipAngle={10}
-            arcLinkLabelsTextColor="#333333"
-            arcLinkLabelsThickness={2}
-            arcLinkLabelsColor={{ from: 'color' }}
-            arcLabelsSkipAngle={10}
-            arcLabelsTextColor={{
-              from: 'color',
-              modifiers: [['darker', 2]]
-            }}
-            colors={(datum: any) => datum.color}
-            onClick={handleSliceClick}
-            tooltip={CustomTooltip}
-            legends={[
-              {
-                anchor: 'bottom',
-                direction: 'row',
-                justify: false,
-                translateX: 0,
-                translateY: 56,
-                itemsSpacing: 0,
-                itemWidth: 100,
-                itemHeight: 18,
-                itemTextColor: '#999',
-                itemDirection: 'left-to-right',
-                itemOpacity: 1,
-                symbolSize: 18,
-                symbolShape: 'circle',
-                effects: [
-                  {
-                    on: 'hover',
-                    style: {
-                      itemTextColor: '#000'
-                    }
-                  }
-                ]
-              }
-            ]}
-            animate={true}
-            motionStiffness={90}
-            motionDamping={15}
-          />
+          <ResponsiveContainer width="100%" height="100%">
+            <PieChart>
+              <Pie
+                data={pieData}
+                cx="50%"
+                cy="50%"
+                labelLine={false}
+                label={renderCustomLabel}
+                outerRadius={Math.min(height * 0.35, 120)}
+                innerRadius={Math.min(height * 0.2, 60)}
+                fill="#8884d8"
+                dataKey="value"
+                stroke="#fff"
+                strokeWidth={2}
+                onClick={handleSliceClick}
+                style={{ cursor: onCategoryClick ? 'pointer' : 'default' }}
+              >
+                {pieData.map((entry, index) => (
+                  <Cell key={`cell-${index}`} fill={entry.color} />
+                ))}
+              </Pie>
+              <Tooltip content={<CustomTooltip />} />
+              <Legend 
+                verticalAlign="bottom" 
+                height={36}
+                formatter={(value: string) => truncateName(value, 20)}
+                wrapperStyle={{ fontSize: '12px' }}
+              />
+            </PieChart>
+          </ResponsiveContainer>
         </div>
 
-        {/* Statistiques supplémentaires */}
-        <div className="mt-4 grid grid-cols-2 gap-4 text-sm">
+        {/* Informations supplémentaires */}
+        <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
           <div className="text-center">
             <div className="font-medium text-gray-900">Valeur totale</div>
-            <div className="text-lg font-bold text-blue-600">{formatTreemapValue(totalValue)}</div>
+            <div className="text-lg font-bold text-blue-600">{formatFinancialValue(totalValue)}</div>
           </div>
           <div className="text-center">
-            <div className="font-medium text-gray-900">Actifs totaux</div>
-            <div className="text-lg font-bold text-green-600">
-              {categories.reduce((sum, cat) => sum + cat.nombreActifs, 0)}
-            </div>
+            <div className="font-medium text-gray-900">Nombre d'actifs</div>
+            <div className="text-lg font-bold text-green-600">{categories.reduce((sum, cat) => sum + cat.nombreActifs, 0)}</div>
+          </div>
+          <div className="text-center">
+            <div className="font-medium text-gray-900">Indice de diversification</div>
+            <div className="text-lg font-bold text-purple-600">{diversificationIndex}%</div>
           </div>
         </div>
 
-        {/* Légende personnalisée */}
+        {/* Liste des catégories */}
         <div className="mt-4 space-y-2">
           {categories.map((category) => (
             <div
@@ -249,17 +247,17 @@ export function PieChartPatrimoine({
               className="flex items-center justify-between p-2 rounded-lg hover:bg-gray-50 cursor-pointer transition-colors"
             >
               <div className="flex items-center space-x-3">
-                <div
+                <div 
                   className="w-4 h-4 rounded-full"
                   style={{ backgroundColor: category.couleur }}
                 />
-                <div>
-                  <div className="font-medium text-gray-900">{category.nom}</div>
-                  <div className="text-sm text-gray-500">{category.nombreActifs} actifs</div>
-                </div>
+                <span className="font-medium text-gray-900">{category.nom}</span>
+                <Badge variant="outline" className="text-xs">
+                  {category.nombreActifs} actif{category.nombreActifs > 1 ? 's' : ''}
+                </Badge>
               </div>
               <div className="text-right">
-                <div className="font-medium text-gray-900">{formatTreemapValue(category.montant)}</div>
+                <div className="font-medium text-gray-900">{formatFinancialValue(category.montant)}</div>
                 <div className="text-sm text-gray-500">{formatPercentage(category.pourcentage)}</div>
               </div>
             </div>

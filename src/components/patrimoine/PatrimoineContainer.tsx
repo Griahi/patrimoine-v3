@@ -1,20 +1,20 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { toast } from 'sonner';
 import { PatrimoineHeader } from './PatrimoineHeader';
-import { TreemapPatrimoine } from './TreemapPatrimoine';
+import { PieChartPatrimoine } from './PieChartPatrimoine';
 import { CategoryBar } from './CategoryBar';
 import { 
-  AssetForTreemap, 
-  EntityForTreemap, 
+  AssetForFinancial, 
+  EntityForFinancial, 
   PatrimoineMetrics,
   CategoryData,
-  processAssetsForTreemap,
+  processAssetsForFinancialMetrics,
   filterAssets
-} from '@/utils/treemap-calculations';
+} from '@/utils/financial-utils';
 
 interface PatrimoineContainerProps {
-  initialAssets?: AssetForTreemap[];
-  initialEntities?: EntityForTreemap[];
+  initialAssets?: AssetForFinancial[];
+  initialEntities?: EntityForFinancial[];
   height?: number;
   onCategoryDetail?: (category: CategoryData) => void;
 }
@@ -25,8 +25,8 @@ export function PatrimoineContainer({
   height = 500,
   onCategoryDetail
 }: PatrimoineContainerProps) {
-  const [assets, setAssets] = useState<AssetForTreemap[]>(initialAssets);
-  const [entities, setEntities] = useState<EntityForTreemap[]>(initialEntities);
+  const [assets, setAssets] = useState<AssetForFinancial[]>(initialAssets);
+  const [entities, setEntities] = useState<EntityForFinancial[]>(initialEntities);
   const [selectedEntityIds, setSelectedEntityIds] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -62,7 +62,7 @@ export function PatrimoineContainer({
 
   // Calculer les métriques du patrimoine
   const patrimoineMetrics = useMemo(() => {
-    const metrics = processAssetsForTreemap(filteredAssets, selectedEntityIds);
+    const metrics = processAssetsForFinancialMetrics(filteredAssets, selectedEntityIds);
     return {
       ...metrics,
       entites: selectedEntityIds.length > 0 
@@ -102,7 +102,7 @@ export function PatrimoineContainer({
       ]);
 
       // Transformer les données au format attendu
-      const transformedAssets: AssetForTreemap[] = assetsData.map((asset: any) => ({
+      const transformedAssets: AssetForFinancial[] = assetsData.map((asset: any) => ({
         id: asset.id,
         name: asset.name,
         assetType: {
@@ -116,7 +116,7 @@ export function PatrimoineContainer({
         debts: asset.debts || []
       }));
 
-      const transformedEntities: EntityForTreemap[] = entitiesData.map((entity: any) => ({
+      const transformedEntities: EntityForFinancial[] = entitiesData.map((entity: any) => ({
         id: entity.id,
         name: entity.name,
         type: entity.type
@@ -187,8 +187,8 @@ export function PatrimoineContainer({
         loading={loading}
       />
 
-      {/* Treemap principal */}
-      <TreemapPatrimoine
+      {/* Graphique principal */}
+      <PieChartPatrimoine
         categories={patrimoineMetrics.categories}
         height={height}
         loading={loading}
