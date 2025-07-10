@@ -24,11 +24,35 @@ interface Entity {
   type: string
 }
 
+interface Asset {
+  id: string
+  name: string
+  assetType: {
+    id: string
+    name: string
+    code: string
+    color?: string
+  }
+  ownerships: {
+    id: string
+    percentage: number
+    ownerEntity: Entity
+  }[]
+  valuations: {
+    id: string
+    value: number
+    currency: string
+    valuationDate: string
+    source: string
+  }[]
+}
+
 interface FilterState {
   period: string
   customStartDate?: string
   customEndDate?: string
   entities: string[]
+  assets: string[]
   currency: string
   reportType: string
   includeProjections: boolean
@@ -39,14 +63,16 @@ interface FilterState {
 
 interface ReportFiltersProps {
   entities: Entity[]
+  assets: Asset[]
   onFiltersChange: (filters: FilterState) => void
   loading?: boolean
 }
 
-export default function ReportFilters({ entities, onFiltersChange, loading = false }: ReportFiltersProps) {
+export default function ReportFilters({ entities, assets, onFiltersChange, loading = false }: ReportFiltersProps) {
   const [filters, setFilters] = useState<FilterState>({
     period: 'ytd',
     entities: [],
+    assets: [],
     currency: 'EUR',
     reportType: 'bilan_complet',
     includeProjections: false,
@@ -97,6 +123,23 @@ export default function ReportFilters({ entities, onFiltersChange, loading = fal
     { value: 'illiquid', label: 'Actifs illiquides' }
   ]
 
+  const getAssetTypeIcon = (assetTypeCode: string): string => {
+    const iconMap: Record<string, string> = {
+      'real_estate': '🏠',
+      'stock': '📈',
+      'bond': '📊',
+      'bank_account': '🏦',
+      'cryptocurrency': '₿',
+      'precious_metal': '🥇',
+      'investment_fund': '📈',
+      'life_insurance': '🛡️',
+      'vehicle': '🚗',
+      'valuable_object': '💎',
+      'other': '📋'
+    }
+    return iconMap[assetTypeCode] || '📋'
+  }
+
   const updateFilter = (key: keyof FilterState, value: any) => {
     const newFilters = { ...filters, [key]: value }
     setFilters(newFilters)
@@ -114,6 +157,7 @@ export default function ReportFilters({ entities, onFiltersChange, loading = fal
     const defaultFilters: FilterState = {
       period: 'ytd',
       entities: [],
+      assets: [],
       currency: 'EUR',
       reportType: 'bilan_complet',
       includeProjections: false,
@@ -289,6 +333,48 @@ export default function ReportFilters({ entities, onFiltersChange, loading = fal
             )}
           </div>
 
+          {/* Sélection d'actifs */}
+          <div>
+            <Label className="flex items-center mb-2">
+              <Tag className="h-4 w-4 mr-1" />
+              Actifs à inclure {filters.assets.length > 0 && `(${filters.assets.length} sélectionnés)`}
+            </Label>
+            <MultiSelectDropdown
+              options={assets.map(asset => {
+                const latestValuation = asset.valuations[0]
+                const assetValue = latestValuation ? latestValuation.value : 0
+                const valueFormatted = assetValue.toLocaleString('fr-FR', {
+                  style: 'currency',
+                  currency: latestValuation?.currency || 'EUR'
+                })
+                
+                return {
+                  id: asset.id,
+                  label: asset.name,
+                  value: asset.id,
+                  description: `${asset.assetType.name} - ${valueFormatted}`,
+                  type: asset.assetType.code,
+                  icon: getAssetTypeIcon(asset.assetType.code)
+                }
+              })}
+              selectedValues={filters.assets}
+              onSelectionChange={(selectedValues) => updateFilter('assets', selectedValues)}
+              placeholder="Sélectionner des actifs"
+              searchPlaceholder="Rechercher un actif..."
+              maxDisplayItems={3}
+              showSelectAll={true}
+              showClearAll={true}
+              emptyStateText="Aucun actif disponible"
+              loading={loading}
+              loadingText="Chargement des actifs..."
+            />
+            {filters.assets.length === 0 && (
+              <div className="text-sm text-muted-foreground mt-1">
+                Aucun actif sélectionné = tous les actifs inclus
+              </div>
+            )}
+          </div>
+
           {/* Options avancées */}
           {isExpanded && (
             <div className="space-y-4 pt-4 border-t">
@@ -338,7 +424,7 @@ export default function ReportFilters({ entities, onFiltersChange, loading = fal
       </Card>
 
       {/* Aperçu des filtres actifs */}
-      {(filters.entities.length > 0 || filters.period !== 'ytd' || filters.currency !== 'EUR') && (
+      {(filters.entities.length > 0 || filters.assets.length > 0 || filters.period !== 'ytd' || filters.currency !== 'EUR') && (
         <Card className="border-primary/20 bg-primary/5">
           <CardContent className="py-3">
             <div className="flex items-center justify-between">
@@ -349,6 +435,11 @@ export default function ReportFilters({ entities, onFiltersChange, loading = fal
                   {filters.entities.length > 0 && (
                     <span className="px-2 py-1 bg-primary/10 text-primary text-xs rounded">
                       {filters.entities.length} entité{filters.entities.length > 1 ? 's' : ''}
+                    </span>
+                  )}
+                  {filters.assets.length > 0 && (
+                    <span className="px-2 py-1 bg-primary/10 text-primary text-xs rounded">
+                      {filters.assets.length} actif{filters.assets.length > 1 ? 's' : ''}
                     </span>
                   )}
                   {filters.period !== 'ytd' && (

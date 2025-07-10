@@ -1,69 +1,80 @@
+import { getUserFromRequest } from '@/lib/auth'
 import { NextRequest, NextResponse } from 'next/server'
-import { getUserIdFromRequest } from '@/lib/auth-utils'
-import { getAssetsByUserId, addAssetToFile, getEntitiesByUserId } from '@/lib/json-storage'
+import { prisma } from '@/lib/prisma'
 
 interface OwnershipData {
   entityId: string;
   percentage: number;
 }
 
-// Import Prisma avec try/catch pour éviter les erreurs de compilation
-let prisma: typeof import('@/lib/prisma').prisma | null = null;
-try {
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const { prisma: importedPrisma } = require('@/lib/prisma');
-  prisma = importedPrisma;
-} catch {
-  console.warn('⚠️ Prisma import failed, using file storage only');
-}
-
 export async function GET(request: NextRequest) {
   try {
-    const userId = await getUserIdFromRequest(request);
-    if (!userId) {
+    const user = await getUserFromRequest(request);
+    if (!user) {
       return NextResponse.json({ error: 'Non autorisé' }, { status: 401 });
     }
 
-    console.log('📋 GET /api/assets - userId:', userId)
+    // Parse entity filter from URL parameters
+    const { searchParams } = new URL(request.url)
+    const entityIdsParam = searchParams.get('entityIds')
+    const entityIds = entityIdsParam 
+      ? entityIdsParam.split(',').filter(id => id.trim())
+      : null
 
-    // Essayer d'abord Prisma, sinon utiliser les fichiers JSON
-    let assets;
-    try {
-      if (!prisma) throw new Error('Prisma not available');
-      assets = await prisma.asset.findMany({
-        where: {
-          ownerships: {
-            some: {
-              ownerEntity: {
-                userId: userId
+    console.log('📊 GET /api/assets - Entity filter:', entityIds ? `${entityIds.length} entities` : 'all entities')
+
+    // Build the where clause based on entity filter
+    let whereClause = {
+      ownerships: {
+        some: {
+          ownerEntity: {
+            userId: user.id
+          }
+        }
+      }
+    }
+
+    if (entityIds && entityIds.length > 0) {
+      whereClause = {
+        ownerships: {
+          some: {
+            ownerEntity: {
+              userId: user.id,
+              id: { in: entityIds }
+            }
+          }
+        }
+      }
+    }
+
+    const assets = await prisma.asset.findMany({
+      where: whereClause,
+      include: {
+        assetType: true,
+        ownerships: {
+          include: {
+            ownerEntity: true
+          }
+        },
+        debts: {
+          include: {
+            asset: {
+              include: {
+                assetType: true
               }
             }
           }
         },
-        include: {
-          assetType: true,
-          ownerships: {
-            include: {
-              ownerEntity: true
-            }
+        valuations: {
+          orderBy: {
+            valuationDate: 'desc'
           },
-          valuations: {
-            orderBy: {
-              valuationDate: 'desc'
-            },
-            take: 1
-          }
-        },
-        orderBy: {
-          createdAt: 'desc'
+          take: 1
         }
-      });
-    } catch (error) {
-      console.warn('⚠️ Prisma failed, using file storage:', error instanceof Error ? error.message : 'Unknown error');
-      assets = await getAssetsByUserId(userId);
-    }
+      }
+    });
 
-    console.log('✅ Returning', assets.length, 'assets')
+    console.log('✅ Returning', assets.length, 'assets', entityIds ? `for ${entityIds.length} entities` : 'for all entities')
     return NextResponse.json(assets)
   } catch (error) {
     console.error('❌ Erreur lors de la récupération des actifs:', error)
@@ -73,123 +84,172 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const userId = await getUserIdFromRequest(request);
-    if (!userId) {
+    console.log('🚀 POST /api/assets - Start')
+    
+    const user = await getUserFromRequest(request);
+    console.log('🔑 Auth result:', { userId: user?.id })
+    
+    if (!user) {
+      console.log('❌ No user, returning 401')
       return NextResponse.json({ error: 'Non autorisé' }, { status: 401 });
     }
 
+    console.log('📦 Reading request body...')
     const body = await request.json()
-    console.log('📝 Body reçu:', body)
+    console.log('📝 Body received:', JSON.stringify(body, null, 2))
     
-    const { name, description, assetTypeId, metadata, ownerships = [], owners = [], initialValue = 0, valuationDate } = body
+    const { 
+      name, 
+      description, 
+      assetTypeId, 
+      owners,
+      initialValue,
+      valuationDate,
+      metadata 
+    } = body
 
-    if (!name || !assetTypeId) {
-      return NextResponse.json({ error: "Nom et type d'actif requis" }, { status: 400 })
+    console.log('🔍 Extracted data:', {
+      name,
+      assetTypeId,
+      ownersCount: owners?.length,
+      owners,
+      initialValue,
+      valuationDate
+    })
+
+    // Validation
+    if (!name || !assetTypeId || !owners || !Array.isArray(owners) || owners.length === 0) {
+      console.log('❌ Validation failed - missing required fields:', {
+        hasName: !!name,
+        hasAssetTypeId: !!assetTypeId,
+        hasOwners: !!owners,
+        isOwnersArray: Array.isArray(owners),
+        ownersLength: owners?.length
+      })
+      return NextResponse.json(
+        { error: 'Name, asset type, and at least one owner are required' },
+        { status: 400 }
+      )
     }
 
-    console.log('➕ POST /api/assets - Creating asset:', { name, assetTypeId, userId, initialValue, ownershipsLength: ownerships.length, ownersLength: owners.length })
-
-    // Essayer d'abord Prisma, sinon utiliser le système de fichiers
-    let newAsset;
-    try {
-      if (!prisma) throw new Error('Prisma not available');
-      
-      // Validation des ownerships
-      if (ownerships.length > 0) {
-        const totalPercentage = ownerships.reduce((sum: number, o: OwnershipData) => sum + (o.percentage || 0), 0)
-        if (Math.abs(totalPercentage - 100) > 0.01) {
-          throw new Error('La somme des pourcentages de détention doit être égale à 100%')
-        }
+    // Validate that all owners have entityId and percentage
+    for (const owner of owners) {
+      if (!owner.entityId || typeof owner.percentage !== 'number') {
+        console.log('❌ Invalid owner data:', owner)
+        return NextResponse.json(
+          { error: 'Each owner must have an entityId and percentage' },
+          { status: 400 }
+        )
       }
-
-      const assetData = {
-        name,
-        description: description || null,
-        assetTypeId,
-        metadata: metadata && Object.keys(metadata).length > 0 ? metadata : null
-      }
-
-      newAsset = await prisma.asset.create({
-        data: assetData,
-        include: {
-          assetType: true,
-          ownerships: {
-            include: {
-              ownerEntity: true
-            }
-          },
-          valuations: {
-            orderBy: {
-              valuationDate: 'desc'
-            },
-            take: 1
-          }
-        }
-      });
-    } catch (error) {
-      console.warn('⚠️ Prisma failed, using file storage:', error instanceof Error ? error.message : 'Unknown error');
-      
-      // Fallback: créer un actif et l'ajouter au fichier JSON
-      // Créer un type d'actif par défaut
-      const assetType = {
-        id: assetTypeId,
-        name: 'Type d\'actif',
-        category: 'OTHER',
-        color: '#6B7280'
-      };
-
-      // Utiliser owners (du formulaire) ou ownerships (API directe)
-      const ownershipData = owners.length > 0 ? owners : ownerships;
-      
-      // Récupérer les entités depuis le fichier JSON
-      const fileEntities = await getEntitiesByUserId(userId);
-      
-      // Créer les ownerships avec les entités correspondantes
-      const createdOwnerships = ownershipData.map((ownership: OwnershipData) => {
-        const ownerEntity = fileEntities.find(entity => entity.id === ownership.entityId);
-        return {
-          id: `ownership-${Date.now()}-${Math.random()}`,
-          ownerEntityId: ownership.entityId,
-          percentage: ownership.percentage,
-          ownerEntity: ownerEntity || {
-            id: ownership.entityId,
-            name: 'Entité inconnue',
-            userId: userId
-          }
-        };
-      });
-
-      newAsset = {
-        id: `asset-${Date.now()}`,
-        name,
-        description: description || null,
-        assetTypeId,
-        metadata: metadata && Object.keys(metadata).length > 0 ? metadata : null,
-        externalId: null,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-        assetType: assetType,
-        ownerships: createdOwnerships,
-        valuations: [
-          {
-            id: `valuation-${Date.now()}`,
-            value: initialValue || 0,
-            currency: 'EUR',
-            valuationDate: valuationDate ? new Date(valuationDate) : new Date(),
-            source: 'MANUAL',
-            notes: 'Valeur initiale'
-          }
-        ]
-      };
-
-      // Ajouter au fichier JSON persistant
-      await addAssetToFile(newAsset);
     }
 
-    console.log('✅ Created asset:', newAsset.id)
-    return NextResponse.json(newAsset)
+    // Validate total percentage equals 100%
+    const totalPercentage = owners.reduce((sum, owner) => sum + owner.percentage, 0)
+    console.log('📊 Total percentage:', totalPercentage)
+    
+    if (Math.abs(totalPercentage - 100) > 0.01) {
+      console.log('❌ Total percentage validation failed:', totalPercentage)
+      return NextResponse.json(
+        { error: 'Total ownership percentage must equal 100%' },
+        { status: 400 }
+      )
+    }
+
+    // Verify that all owner entities belong to the user
+    const ownerEntityIds = owners.map(owner => owner.entityId)
+    console.log('🔍 Looking for owner entities:', ownerEntityIds)
+    
+    const ownerEntities = await prisma.entity.findMany({
+      where: {
+        id: { in: ownerEntityIds },
+        userId: user.id
+      }
+    })
+
+    console.log('👥 Found owner entities:', ownerEntities.length, 'expected:', ownerEntityIds.length)
+
+    if (ownerEntities.length !== ownerEntityIds.length) {
+      console.log('❌ Owner entities mismatch. Found:', ownerEntities.map(e => e.id), 'Expected:', ownerEntityIds)
+      return NextResponse.json(
+        { error: 'One or more owner entities not found or not owned by user' },
+        { status: 404 }
+      )
+    }
+
+    // Verify that the asset type exists
+    console.log('🔍 Looking for asset type:', assetTypeId)
+    const assetType = await prisma.assetType.findUnique({
+      where: { id: assetTypeId }
+    })
+
+    console.log('📋 Asset type found:', !!assetType, assetType?.name)
+
+    if (!assetType) {
+      console.log('❌ Asset type not found:', assetTypeId)
+      return NextResponse.json(
+        { error: 'Asset type not found' },
+        { status: 404 }
+      )
+    }
+
+    console.log('💾 Starting transaction...')
+    // Create asset in a transaction
+    const result = await prisma.$transaction(async (tx) => {
+      console.log('📝 Creating asset...')
+      // Create the asset
+      const newAsset = await tx.asset.create({
+        data: {
+          name,
+          description: description || null,
+          assetTypeId,
+          metadata: metadata || null
+        }
+      })
+      console.log('✅ Asset created:', newAsset.id)
+
+      console.log('👥 Creating ownership relationships...')
+      // Create ownership relationships
+      const ownershipPromises = owners.map(owner => 
+        tx.ownership.create({
+          data: {
+            ownerEntityId: owner.entityId,
+            ownedAssetId: newAsset.id,
+            percentage: owner.percentage,
+            startDate: new Date(),
+          }
+        })
+      )
+      
+      await Promise.all(ownershipPromises)
+      console.log('✅ Ownerships created')
+
+      // Add initial valuation if provided
+      if (initialValue && initialValue > 0) {
+        console.log('💰 Creating initial valuation:', initialValue)
+        await tx.valuation.create({
+          data: {
+            assetId: newAsset.id,
+            value: initialValue,
+            valuationDate: new Date(valuationDate || new Date()),
+            source: 'MANUAL'
+          }
+        })
+        console.log('✅ Valuation created')
+      }
+
+      return newAsset
+    })
+
+    console.log('✅ Transaction completed successfully, returning asset:', result.id)
+    return NextResponse.json(result)
   } catch (error) {
-    console.error('❌ Erreur lors de la création de l\'actif:', error)
-    return NextResponse.json({ error: "Erreur serveur" }, { status: 500 })
+    console.error('❌ Error creating asset:', error)
+    console.error('❌ Error details:', error instanceof Error ? error.message : error)
+    console.error('❌ Error stack:', error instanceof Error ? error.stack : 'No stack')
+    
+    return NextResponse.json(
+      { error: 'Internal server error' },
+      { status: 500 }
+    )
   }
 } 

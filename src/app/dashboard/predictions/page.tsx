@@ -5,7 +5,7 @@ import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { generatePortfolioPredictions } from '@/services/predictions/ml-prediction-service';
 import { PortfolioPrediction } from '@/types/predictions';
-import { getServerSession } from '@/lib/auth-helper';
+import { getServerSession } from '@/lib/auth';
 
 interface SearchParams {
   generate?: string;
@@ -189,15 +189,6 @@ export default async function PredictionsPage({ searchParams }: PageProps) {
                 Une extension Chrome bloque les requêtes HTTP sur cette page. Cette page utilise un traitement côté serveur pour éviter ce problème.
               </p>
               <div className="flex gap-2 mb-3">
-                <a href="/diagnostics" className="inline-block">
-                  <Button 
-                    variant="outline" 
-                    size="sm"
-                    className="bg-yellow-100 border-yellow-300 text-yellow-800 hover:bg-yellow-200"
-                  >
-                    🔍 Diagnostics Complets
-                  </Button>
-                </a>
                 <a href="/api/session-check" target="_blank" className="inline-block">
                   <Button 
                     variant="outline" 

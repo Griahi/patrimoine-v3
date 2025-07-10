@@ -1,7 +1,5 @@
-import { PrismaClient } from '@prisma/client';
 import { Asset, Entity, Valuation, AssetType, Debt } from '@prisma/client';
-
-const prisma = new PrismaClient();
+import { prisma } from '@/lib/prisma';
 
 export interface TaxAnalysis {
   currentBurden: {

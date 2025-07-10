@@ -10,14 +10,14 @@ const quickActions = [
     id: 'add-entity',
     label: 'Nouvelle Entité',
     icon: Users,
-    href: '/entities/new',
+    href: '/entities',
     color: 'bg-blue-500 hover:bg-blue-600'
   },
   {
     id: 'add-asset',
     label: 'Nouvel Actif',
     icon: Building2,
-    href: '/assets/new',
+    href: '/assets',
     color: 'bg-green-500 hover:bg-green-600'
   },
   {

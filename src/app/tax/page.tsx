@@ -1,7 +1,7 @@
 import { Metadata } from 'next';
 import { redirect } from 'next/navigation';
 import TaxOptimizer from '@/components/tax/TaxOptimizer';
-import { getServerSession } from '@/lib/auth-helper';
+import { getServerSession } from '@/lib/auth';
 
 export const metadata: Metadata = {
   title: 'Optimiseur Fiscal | Gestion de Patrimoine',

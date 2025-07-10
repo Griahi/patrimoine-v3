@@ -4,7 +4,11 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/Button"
 import { AssetDistributionChart, AssetsByEntityChart, PortfolioEvolutionChart } from "@/components/charts/ReportsCharts"
 import { FileText, Download, TrendingUp, PieChart as PieChartIcon, BarChart3, Euro } from "lucide-react"
-import { getServerSession } from "@/lib/auth-helper"
+import { getServerSession } from "@/lib/auth"
+import { 
+  formatCurrency 
+} from "@/utils/financial-calculations"
+import Link from "next/link"
 
 async function getReportsData(userId: string) {
   try {
@@ -33,26 +37,33 @@ async function getReportsData(userId: string) {
           }
         }),
         
-        prisma.asset.findMany({
-          where: {
-            ownerships: {
-              some: {
-                ownerEntity: { userId }
-              }
+              prisma.asset.findMany({
+        where: {
+          ownerships: {
+            some: {
+              ownerEntity: { userId }
             }
+          }
+        },
+        include: {
+          assetType: true,
+          valuations: {
+            orderBy: { valuationDate: 'desc' }
           },
-          include: {
-            assetType: true,
-            valuations: {
-              orderBy: { valuationDate: 'desc' }
-            },
-            ownerships: {
-              include: {
-                ownerEntity: true
+          ownerships: {
+            include: {
+              ownerEntity: {
+                select: {
+                  id: true,
+                  name: true,
+                  type: true,
+                  userId: true
+                }
               }
             }
           }
-        }),
+        }
+      }),
         
         prisma.assetType.findMany()
       ]);
@@ -69,13 +80,27 @@ async function getReportsData(userId: string) {
       ];
     }
 
-    console.log('📊 Reports: Data loaded successfully')
-    console.log('📊 Entities:', entities.length, 'Assets:', assets.length, 'AssetTypes:', assetTypes.length)
+    console.log('📊 Reports: Data loaded successfully -', entities.length, 'entities,', assets.length, 'assets')
 
-    // Calculer les métriques pour le tableau de bord
+    // Calculer les métriques pour le tableau de bord avec ownership
     const totalValue = assets.reduce((total, asset) => {
       const latestValuation = asset.valuations?.[0]
-      return total + (latestValuation?.value || 0)
+      if (!latestValuation || !latestValuation.value || latestValuation.value <= 0) {
+        return total
+      }
+
+      // Calculate ownership percentage for user entities
+      const relevantOwnerships = (asset.ownerships || [])
+        .filter(ownership => entities.some(entity => entity.id === ownership.ownerEntityId))
+      
+      // Sum all ownership percentages for this user's entities
+      const totalOwnership = relevantOwnerships.reduce((sum, ownership) => sum + Number(ownership.percentage), 0)
+      
+      const assetValue = relevantOwnerships.length > 0 
+        ? (latestValuation.value * totalOwnership) / 100
+        : 0
+      
+      return total + assetValue
     }, 0)
 
     const assetsCount = assets.length
@@ -89,7 +114,18 @@ async function getReportsData(userId: string) {
       const typeAssets = assets.filter(asset => asset.assetType?.code === type.code)
       const typeValue = typeAssets.reduce((sum, asset) => {
         const latestValuation = asset.valuations?.[0]
-        return sum + (latestValuation?.value || 0)
+        if (!latestValuation || !latestValuation.value || latestValuation.value <= 0) return sum
+        
+        // Calculate ownership percentage for user entities - FIX
+        const relevantOwnerships = (asset.ownerships || [])
+          .filter(ownership => entities.some(entity => entity.id === ownership.ownerEntityId))
+        
+        const totalOwnership = relevantOwnerships.reduce((sum, ownership) => sum + Number(ownership.percentage), 0)
+        const assetValue = relevantOwnerships.length > 0 
+          ? (latestValuation.value * totalOwnership) / 100
+          : 0
+        
+        return sum + assetValue
       }, 0)
       
       return {
@@ -105,8 +141,11 @@ async function getReportsData(userId: string) {
       value: entity.ownedAssets?.reduce((sum, ownership) => {
         const asset = ownership.ownedAsset
         const latestValuation = asset?.valuations?.[0]
-        const assetValue = latestValuation?.value || 0
-        return sum + (assetValue * (ownership.percentage / 100))
+        if (!latestValuation || !latestValuation.value || latestValuation.value <= 0) return sum
+        
+        const ownershipPercentage = Number(ownership.percentage)
+        const assetValue = (latestValuation.value * ownershipPercentage) / 100
+        return sum + assetValue
       }, 0) || 0
     })).filter(item => item.value > 0)
 
@@ -164,57 +203,9 @@ export default async function ReportsPage() {
     redirect("/login?callbackUrl=/reports")
   }
 
-  const { entities, assets, assetTypes } = await getReportsData(session.user.id)
+  const reportsData = await getReportsData(session.user.id)
 
-  // Calculate data for charts
-  const assetsByType = (assetTypes || []).map(type => {
-    const typeAssets = (assets || []).filter(asset => asset.assetTypeId === type.id)
-    const totalValue = typeAssets.reduce((sum, asset) => {
-      const latestValuation = asset.valuations?.[0]
-      const assetValue = latestValuation ? Number(latestValuation.value) : 0
-      
-      // Calculate total ownership percentage for this user across all their entities
-      const userOwnershipPercentage = (asset.ownerships || [])
-        .filter(ownership => (entities || []).some(entity => entity.id === ownership.ownerEntityId))
-        .reduce((total, ownership) => total + Number(ownership.percentage || 0), 0) / 100
-      
-      return sum + (assetValue * userOwnershipPercentage)
-    }, 0)
-    
-    return {
-      name: type.name,
-      value: totalValue,
-      count: typeAssets.length,
-      color: type.color || '#6B7280'
-    }
-  }).filter(item => item.value > 0)
-
-  const assetsByEntity = (entities || []).map(entity => {
-    const totalValue = (entity.ownedAssets || []).reduce((sum, ownership) => {
-      const latestValuation = ownership.ownedAsset?.valuations?.[0]
-      const assetValue = latestValuation ? Number(latestValuation.value) : 0
-      const ownershipPercentage = Number(ownership.percentage || 0) / 100
-      return sum + (assetValue * ownershipPercentage)
-    }, 0)
-    
-    return {
-      name: entity.name,
-      value: totalValue,
-      type: entity.type === 'PHYSICAL_PERSON' ? 'Personne physique' : 'Personne morale'
-    }
-  }).filter(item => item.value > 0)
-
-  const totalPatrimoine = assetsByType.reduce((sum, item) => sum + item.value, 0)
-
-  // Mock evolution data (in real app, this would come from historical valuations)
-  const evolutionData = [
-    { month: 'Jan 2024', value: totalPatrimoine * 0.85 },
-    { month: 'Fév 2024', value: totalPatrimoine * 0.88 },
-    { month: 'Mar 2024', value: totalPatrimoine * 0.92 },
-    { month: 'Avr 2024', value: totalPatrimoine * 0.89 },
-    { month: 'Mai 2024', value: totalPatrimoine * 0.95 },
-    { month: 'Jun 2024', value: totalPatrimoine }
-  ]
+  const totalPatrimoine = reportsData.summary.totalValue
 
   return (
     <div className="container mx-auto px-4 py-8 space-y-8">
@@ -227,6 +218,12 @@ export default async function ReportsPage() {
           </p>
         </div>
         <div className="flex space-x-2">
+          <Link href="/reports/advanced">
+            <Button>
+              <FileText className="h-4 w-4 mr-2" />
+              Rapports Avancés
+            </Button>
+          </Link>
           <Button variant="outline">
             <Download className="h-4 w-4 mr-2" />
             Export PDF
@@ -247,7 +244,7 @@ export default async function ReportsPage() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              {totalPatrimoine.toLocaleString('fr-FR', { style: 'currency', currency: 'EUR' })}
+              {formatCurrency(totalPatrimoine)}
             </div>
             <p className="text-xs text-muted-foreground">
               Valeur totale des actifs
@@ -261,7 +258,7 @@ export default async function ReportsPage() {
             <BarChart3 className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{assets.length}</div>
+            <div className="text-2xl font-bold">{reportsData.summary.assetsCount}</div>
             <p className="text-xs text-muted-foreground">
               Actifs dans le portefeuille
             </p>
@@ -274,7 +271,7 @@ export default async function ReportsPage() {
             <PieChartIcon className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{assetsByType.length}</div>
+            <div className="text-2xl font-bold">{reportsData.charts.assetDistribution.length}</div>
             <p className="text-xs text-muted-foreground">
               Types d'actifs différents
             </p>
@@ -287,7 +284,10 @@ export default async function ReportsPage() {
             <TrendingUp className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">+12.5%</div>
+            <div className="text-2xl font-bold">
+              {reportsData.summary.performance > 0 ? '+' : ''}
+              {reportsData.summary.performance.toFixed(1)}%
+            </div>
             <p className="text-xs text-muted-foreground">
               Évolution annuelle
             </p>
@@ -306,7 +306,7 @@ export default async function ReportsPage() {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <AssetDistributionChart data={assetsByType} />
+            <AssetDistributionChart data={reportsData.charts.assetDistribution} />
           </CardContent>
         </Card>
 
@@ -319,7 +319,7 @@ export default async function ReportsPage() {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <AssetsByEntityChart data={assetsByEntity} />
+            <AssetsByEntityChart data={reportsData.charts.assetsByEntity} />
           </CardContent>
         </Card>
       </div>
@@ -333,7 +333,7 @@ export default async function ReportsPage() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <PortfolioEvolutionChart data={evolutionData} />
+          <PortfolioEvolutionChart data={reportsData.charts.evolution} />
         </CardContent>
       </Card>
 
@@ -348,7 +348,7 @@ export default async function ReportsPage() {
           </CardHeader>
           <CardContent>
             <div className="space-y-4">
-              {assetsByType.map((type, index) => (
+              {reportsData.charts.assetDistribution.map((type, index) => (
                 <div key={index} className="flex items-center justify-between p-3 border rounded">
                   <div className="flex items-center space-x-3">
                     <div 
@@ -358,19 +358,16 @@ export default async function ReportsPage() {
                     <div>
                       <div className="font-medium">{type.name}</div>
                       <div className="text-sm text-muted-foreground">
-                        {type.count} actif{type.count > 1 ? 's' : ''}
+                        Actif principal
                       </div>
                     </div>
                   </div>
                   <div className="text-right">
                     <div className="font-medium">
-                      {type.value.toLocaleString('fr-FR', { 
-                        style: 'currency', 
-                        currency: 'EUR' 
-                      })}
+                      {formatCurrency(type.value)}
                     </div>
                     <div className="text-sm text-muted-foreground">
-                      {((type.value / totalPatrimoine) * 100).toFixed(1)}%
+                      {type.percentage.toFixed(1)}%
                     </div>
                   </div>
                 </div>
@@ -391,7 +388,7 @@ export default async function ReportsPage() {
               <div className="p-3 border-l-4 border-blue-500 bg-blue-50">
                 <div className="font-medium text-blue-900">Diversification</div>
                 <div className="text-sm text-blue-700">
-                  Votre portefeuille semble bien diversifié avec {assetsByType.length} types d'actifs différents.
+                  Votre portefeuille semble bien diversifié avec {reportsData.charts.assetDistribution.length} types d'actifs différents.
                 </div>
               </div>
               

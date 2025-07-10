@@ -1,5 +1,11 @@
 import { type ClassValue, clsx } from "clsx"
 import { twMerge } from "tailwind-merge"
+import { 
+  calculateAssetValue, 
+  calculateOwnershipPercentage, 
+  validateValuation, 
+  sanitizeAmount 
+} from "@/utils/financial-calculations"
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
@@ -13,21 +19,39 @@ export function calculateEntityTotalValue(entity: any): number {
 
   return entity.ownedAssets.reduce((sum: number, ownership: any) => {
     const latestValuation = ownership?.ownedAsset?.valuations?.[0]
-    const assetValue = latestValuation ? Number(latestValuation.value) : 0
-    const ownershipPercentage = Number(ownership?.percentage || 0) / 100
-    return sum + (assetValue * ownershipPercentage)
+    if (!latestValuation) return sum
+
+    const validatedValuation = validateValuation(latestValuation)
+    if (!validatedValuation.isValid) return sum
+
+    const ownershipPercentage = sanitizeAmount(ownership?.percentage)
+    const assetValue = calculateAssetValue(validatedValuation.value, ownershipPercentage)
+    
+    return sum + assetValue
   }, 0)
 }
 
-// Fonction utilitaire pour calculer la valeur totale du patrimoine
-export function calculateTotalPatrimony(assets: any[]): number {
+// Fonction utilitaire pour calculer la valeur totale du patrimoine (avec ownership)
+export function calculateTotalPatrimony(assets: any[], entityIds?: string[]): number {
   if (!Array.isArray(assets)) {
     return 0
   }
 
   return assets.reduce((sum: number, asset: any) => {
     const latestValuation = asset?.valuations?.[0]
-    const assetValue = latestValuation ? Number(latestValuation.value) : 0
+    if (!latestValuation) return sum
+
+    const validatedValuation = validateValuation(latestValuation)
+    if (!validatedValuation.isValid) return sum
+
+    // Filtrer les ownerships par entités si spécifié
+    const relevantOwnerships = asset.ownerships ? asset.ownerships.filter((ownership: any) => 
+      !entityIds || entityIds.length === 0 || entityIds.includes(ownership.ownerEntity?.id)
+    ) : []
+
+    const userOwnershipPercentage = calculateOwnershipPercentage(relevantOwnerships)
+    const assetValue = calculateAssetValue(validatedValuation.value, userOwnershipPercentage)
+    
     return sum + assetValue
   }, 0)
 }
@@ -39,7 +63,7 @@ export function calculateTotalDebts(debts: any[]): number {
   }
 
   return debts.reduce((sum: number, debt: any) => {
-    const debtValue = Number(debt?.currentAmount || 0)
+    const debtValue = sanitizeAmount(debt?.currentAmount)
     return sum + debtValue
   }, 0)
 } 

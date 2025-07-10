@@ -1,26 +1,37 @@
 import { NextRequest, NextResponse } from "next/server"
-import { BridgeService } from "@/lib/integrations/bridge"
 import { prisma } from "@/lib/prisma"
-import { getUserIdFromRequest } from '@/lib/auth-utils'
-
-const bridgeService = new BridgeService()
+import { getUserFromRequest } from '@/lib/auth'
+import { connectBridge } from '@/lib/integrations/bridge'
 
 // POST: Sync Bridge accounts
 export async function POST(request: NextRequest) {
   try {
-    const userId = await getUserIdFromRequest(request);
-    if (!userId) {
+    const user = await getUserFromRequest(request);
+    if (!user) {
       return NextResponse.json({ error: 'Non autorisé' }, { status: 401 });
     }
 
-    const syncResult = await bridgeService.syncAccounts(userId)
+    const bridgeConnection = await connectBridge()
+    
+    if (!bridgeConnection.configured) {
+      return NextResponse.json({ 
+        success: false, 
+        message: bridgeConnection.error || 'Service Bridge non disponible',
+        accountsCreated: 0,
+        accountsUpdated: 0
+      }, { status: 200 })
+    }
 
-    return NextResponse.json(syncResult)
-
+    const result = await bridgeConnection.bridge.syncAccounts(user.id)
+    
+    return NextResponse.json(result)
   } catch (error) {
-    console.error('Bridge sync error:', error)
+    console.error('❌ Erreur lors de la synchronisation du compte:', error)
     return NextResponse.json({ 
-      error: "Erreur lors de la synchronisation" 
+      success: false, 
+      message: 'Erreur lors de la synchronisation',
+      accountsCreated: 0,
+      accountsUpdated: 0
     }, { status: 500 })
   }
 }
@@ -28,52 +39,63 @@ export async function POST(request: NextRequest) {
 // GET: Get sync status
 export async function GET(request: NextRequest) {
   try {
-    const userId = await getUserIdFromRequest(request);
-    if (!userId) {
+    const user = await getUserFromRequest(request);
+    if (!user) {
       return NextResponse.json({ error: 'Non autorisé' }, { status: 401 });
     }
-    
-    // Get Bridge connection status
-    const bridgeConnection = await prisma.bridgeConnection.findFirst({
-      where: { userId, isActive: true }
-    })
 
-    if (!bridgeConnection) {
-      return NextResponse.json({
-        connected: false,
-        message: "Aucune connexion Bridge active"
-      })
+    const bridgeConnection = await connectBridge()
+    
+    if (!bridgeConnection.configured) {
+      return NextResponse.json({ 
+        connected: false, 
+        accounts: [],
+        message: bridgeConnection.error || 'Service Bridge non disponible'
+      }, { status: 200 })
     }
 
-    // Get Bridge accounts
-    const bridgeAccounts = await prisma.bridgeAccount.findMany({
-      where: { userId, isActive: true },
-      orderBy: { lastSyncAt: 'desc' }
+    // Vérifier si l'utilisateur a une connexion Bridge
+    const connection = await prisma.bridgeConnection.findFirst({
+      where: { userId: user.id }
     })
 
-    return NextResponse.json({
-      connected: true,
+    if (!connection) {
+      return NextResponse.json({ 
+        connected: false, 
+        accounts: [],
+        message: 'Aucune connexion Bridge trouvée'
+      }, { status: 200 })
+    }
+
+    // Récupérer les comptes depuis la base de données
+    const accounts = await prisma.bridgeAccount.findMany({
+      where: { userId: user.id }
+    })
+
+    return NextResponse.json({ 
+      connected: true, 
       connection: {
-        id: bridgeConnection.id,
-        bankName: bridgeConnection.bankName,
-        createdAt: bridgeConnection.createdAt,
-        lastSync: bridgeAccounts[0]?.lastSyncAt
+        id: connection.id,
+        bankName: 'Banque connectée',
+        createdAt: connection.createdAt.toISOString(),
+        lastSync: connection.updatedAt.toISOString()
       },
-      accounts: bridgeAccounts.map(account => ({
-        id: account.id,
-        name: account.name,
-        balance: account.balance,
-        currency: account.currency,
-        type: account.type,
-        iban: account.iban,
-        lastSyncAt: account.lastSyncAt
+      accounts: accounts.map(acc => ({
+        id: acc.id,
+        name: acc.name,
+        balance: acc.balance,
+        currency: acc.currency,
+        type: acc.type,
+        iban: acc.iban,
+        lastSyncAt: acc.lastSyncAt?.toISOString()
       }))
     })
-
   } catch (error) {
-    console.error('Bridge status error:', error)
+    console.error('❌ Erreur lors de la récupération du statut Bridge:', error)
     return NextResponse.json({ 
-      error: "Erreur lors de la récupération du statut" 
+      connected: false, 
+      accounts: [],
+      message: 'Erreur lors de la récupération du statut' 
     }, { status: 500 })
   }
 } 

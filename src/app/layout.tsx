@@ -5,6 +5,7 @@ import { SessionProvider } from "@/components/SessionProvider";
 import { Navbar } from "@/components/Navbar";
 import { Toaster } from "@/components/ui/Toaster";
 import { AuthPersistence } from "@/components/layout/AuthPersistence";
+import ChatWidget from "@/components/ai/ChatWidget";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -29,11 +30,12 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
-        <SessionProvider session={null}>
+        <SessionProvider>
           <Navbar />
           {children}
           <AuthPersistence />
           <Toaster />
+          <ChatWidget />
         </SessionProvider>
       </body>
     </html>

@@ -11,6 +11,17 @@ import {
   WidgetConfig 
 } from '@/types/dashboard'
 import { getEntitiesByUserId, getAssetsByUserId } from '@/lib/json-storage'
+import {
+  calculatePortfolioValue,
+  calculatePerformance,
+  getRecentActivities,
+  generateRealAlerts,
+  generateRealAIInsights,
+  calculateAssetTypeDistribution,
+  getTopAssets,
+  calculateEvolutionData,
+  formatCurrency
+} from '@/utils/dashboard-calculations'
 
 // Couleurs prédéfinies pour les types d'actifs
 const ASSET_TYPE_COLORS = [
@@ -54,7 +65,7 @@ async function getDashboardData(userId: string, entityIds?: string[]) {
         },
         valuations: {
           orderBy: { valuationDate: 'desc' },
-          take: 1
+          take: 10 // Prendre plus de valuations pour les calculs d'évolution
         }
       }
     })
@@ -72,7 +83,7 @@ async function getDashboardData(userId: string, entityIds?: string[]) {
                 assetType: true,
                 valuations: {
                   orderBy: { valuationDate: 'desc' },
-                  take: 1
+                  take: 10
                 }
               }
             }
@@ -158,9 +169,66 @@ export async function GET(request: NextRequest) {
       entityIds
     )
 
-    console.log('Dashboard data processed successfully')
+    // Calculer toutes les données nécessaires pour le dashboard
+    const portfolioValue = calculatePortfolioValue(assets);
+    const performance = calculatePerformance(assets);
+    const recentActivities = getRecentActivities(assets, entities);
+    const alerts = generateRealAlerts(assets, entities);
+    const aiInsights = generateRealAIInsights(assets, entities);
+    const assetDistribution = calculateAssetTypeDistribution(assets);
+    const topAssets = getTopAssets(assets, 5);
+    const evolutionData = calculateEvolutionData(assets, 12);
 
-    return NextResponse.json({ assets, entities })
+    // Calculer des statistiques supplémentaires
+    const statistics = {
+      totalAssets: assets.length,
+      totalEntities: entities.length,
+      lastUpdate: new Date().toISOString(),
+      hasData: assets.length > 0,
+      averageAssetValue: assets.length > 0 ? portfolioValue / assets.length : 0,
+      mostValuableAsset: topAssets[0] || null,
+      oldestAsset: assets.reduce((oldest, asset) => {
+        if (!oldest || !asset.createdAt) return oldest;
+        return asset.createdAt < oldest.createdAt ? asset : oldest;
+      }, null as any),
+      newestAsset: assets.reduce((newest, asset) => {
+        if (!newest || !asset.createdAt) return newest;
+        return asset.createdAt > newest.createdAt ? asset : newest;
+      }, null as any)
+    };
+
+    console.log('Dashboard data processed successfully', {
+      portfolioValue,
+      performance,
+      assetsCount: assets.length,
+      entitiesCount: entities.length,
+      alertsCount: alerts.length,
+      insightsCount: aiInsights.length
+    });
+
+    return NextResponse.json({ 
+      // Données brutes
+      assets, 
+      entities,
+      
+      // Données calculées pour les widgets
+      portfolioValue,
+      performance,
+      recentActivities,
+      alerts,
+      aiInsights,
+      assetDistribution,
+      topAssets,
+      evolutionData,
+      statistics,
+      
+      // Métadonnées
+      meta: {
+        calculatedAt: new Date().toISOString(),
+        entityFilter: entityIds || null,
+        dataSource: 'real-time'
+      }
+    })
   } catch (error) {
     console.error('Erreur lors de la récupération des données:', error)
     return NextResponse.json({ error: "Erreur serveur" }, { status: 500 })

@@ -53,15 +53,27 @@ export class BridgeService {
     this.clientSecret = process.env.BRIDGE_CLIENT_SECRET || ''
     this.redirectUri = process.env.BRIDGE_REDIRECT_URI || ''
 
+    // Ne pas lancer d'erreur, laisser les méthodes gérer l'absence de configuration
     if (!this.clientId || !this.clientSecret) {
-      throw new Error('Bridge API credentials are not configured')
+      console.warn('Bridge API credentials are not configured')
     }
+  }
+
+  /**
+   * Vérifie si l'API Bridge est configurée
+   */
+  isConfigured(): boolean {
+    return !!(this.clientId && this.clientSecret)
   }
 
   /**
    * Génère l'URL d'autorisation pour connecter une banque
    */
   generateAuthUrl(userId: string, state?: string): string {
+    if (!this.isConfigured()) {
+      throw new Error('Bridge API credentials are not configured')
+    }
+
     const params = new URLSearchParams({
       client_id: this.clientId,
       response_type: 'code',
@@ -136,6 +148,11 @@ export class BridgeService {
    * Récupère les comptes bancaires d'un utilisateur
    */
   async getAccounts(accessToken: string): Promise<BridgeAccount[]> {
+    if (!this.clientId || !this.clientSecret) {
+      console.warn('Bridge API credentials are not configured')
+      return []
+    }
+
     try {
       const response = await fetch(`${this.baseUrl}/v2/accounts`, {
         headers: {
@@ -184,6 +201,15 @@ export class BridgeService {
    * Synchronise les comptes bancaires pour un utilisateur
    */
   async syncAccounts(userId: string): Promise<{ success: boolean; message: string; accountsCreated: number; accountsUpdated: number }> {
+    if (!this.clientId || !this.clientSecret) {
+      return {
+        success: false,
+        message: 'Bridge API non configuré - variables d\'environnement manquantes',
+        accountsCreated: 0,
+        accountsUpdated: 0
+      }
+    }
+
     try {
       // Récupération des tokens Bridge de l'utilisateur
       const bridgeConnection = await prisma.bridgeConnection.findFirst({
@@ -460,6 +486,34 @@ export class BridgeService {
         success: false,
         message: 'Erreur lors de la déconnexion de Bridge'
       }
+    }
+  }
+}
+
+/**
+ * Utilitaire pour créer et valider une instance Bridge
+ */
+export async function connectBridge(): Promise<{ bridge: BridgeService; configured: boolean; error?: string }> {
+  try {
+    const bridge = new BridgeService()
+    
+    if (!bridge.isConfigured()) {
+      return {
+        bridge,
+        configured: false,
+        error: 'Bridge API non configuré - variables d\'environnement manquantes'
+      }
+    }
+
+    return {
+      bridge,
+      configured: true
+    }
+  } catch (error) {
+    return {
+      bridge: new BridgeService(),
+      configured: false,
+      error: error instanceof Error ? error.message : 'Erreur lors de la connexion Bridge'
     }
   }
 } 

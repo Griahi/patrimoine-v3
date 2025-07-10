@@ -156,7 +156,7 @@ export default function MultiSelectDropdown({
 
       {/* Dropdown Content */}
       {isOpen && (
-        <Card className="absolute z-50 w-full mt-1 shadow-lg border">
+        <Card className="absolute z-50 w-full mt-1 shadow-lg border bg-white">
           <CardContent className="p-0">
             {/* Search Input */}
             <div className="p-3 border-b">

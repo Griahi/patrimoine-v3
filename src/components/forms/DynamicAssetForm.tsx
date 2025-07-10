@@ -312,13 +312,27 @@ export function DynamicAssetForm({
 
   // Handle submit
   const handleSubmit = async () => {
+    console.log('🚀 DynamicAssetForm: handleSubmit called')
+    console.log('📝 Form data before validation:', JSON.stringify(formData, null, 2))
+    console.log('🔍 Selected asset type:', selectedAssetType)
+    console.log('👥 Available entities:', entities.length)
+    console.log('📋 Available asset types:', assetTypes.length)
+    
     if (validate()) {
+      console.log('✅ Validation passed')
+      
       // Use special API for inter-entity loans
       if (selectedAssetType?.code === 'inter_entity_loan') {
+        console.log('🔀 Using inter-entity loan API')
         await handleInterEntityLoanSubmit()
       } else {
+        console.log('🔄 Using standard asset creation API')
+        console.log('📤 Calling onSubmit with formData:', JSON.stringify(formData, null, 2))
         await onSubmit(formData)
       }
+    } else {
+      console.log('❌ Validation failed')
+      console.log('🚨 Validation errors:', errors)
     }
   }
 
@@ -408,6 +422,28 @@ export function DynamicAssetForm({
               <p className="text-red-600 text-sm mt-1">
                 Vérifiez que l'API /api/asset-types fonctionne correctement.
               </p>
+              <details className="mt-2">
+                <summary className="text-red-600 text-xs cursor-pointer">Debug info</summary>
+                <pre className="text-xs mt-1 bg-red-100 p-2 rounded">
+                  assetTypes.length: {assetTypes.length}
+                  {"\n"}URL: /api/asset-types
+                </pre>
+              </details>
+            </div>
+          ) : entities.length === 0 ? (
+            <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+              <p className="text-yellow-700 font-medium">⚠️ Aucune entité disponible!</p>
+              <p className="text-yellow-600 text-sm mt-1">
+                Vous devez créer au moins une entité (personne ou société) avant de pouvoir créer un actif.
+              </p>
+              <div className="mt-3">
+                <a 
+                  href="/entities" 
+                  className="inline-flex items-center text-sm text-yellow-700 underline hover:text-yellow-800"
+                >
+                  → Créer une entité maintenant
+                </a>
+              </div>
             </div>
           ) : (
             <Select 

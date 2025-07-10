@@ -20,6 +20,22 @@ import {
 } from "lucide-react"
 import Link from "next/link"
 import { calculateTotalPatrimony, calculateTotalDebts } from "@/lib/utils"
+import { 
+  formatCurrency, 
+  calculateAssetValue, 
+  calculateOwnershipPercentage, 
+  validateValuation 
+} from "@/utils/financial-calculations"
+import EntityFilter from "@/components/dashboard/EntityFilter"
+import { useDashboardEntityFilter } from "@/hooks/useEntityFilter"
+import { PatrimoineChart } from "@/components/charts/PatrimoineChart"
+import { TreemapPatrimoine } from "@/components/patrimoine/TreemapPatrimoine"
+import { 
+  processAssetsForTreemap, 
+  AssetForTreemap, 
+  EntityForTreemap,
+  CategoryData
+} from "@/utils/treemap-calculations"
 
 interface Entity {
   id: string
@@ -90,28 +106,79 @@ export default function DashboardContent() {
     error: null
   })
   const [hasInitialized, setHasInitialized] = useState(false)
+  const [viewMode, setViewMode] = useState<'pie' | 'treemap'>('treemap')
+  
+  // Entity filter state
+  const {
+    selectedEntityIds,
+    setSelectedEntityIds,
+    hasSelection
+  } = useDashboardEntityFilter()
 
   const loadDashboardData = useCallback(async () => {
-    if (dashboardData.loading && hasInitialized) {
-      console.log('⏭️ Skipping loadDashboardData - already loading')
-      return // Éviter les appels multiples
-    }
-
     try {
       console.log('📊 Loading dashboard data...')
+      console.log('📊 Session status:', status)
+      console.log('📊 Session data:', session)
+      console.log('📊 Entity filter:', hasSelection ? selectedEntityIds : 'all entities')
+      
       setDashboardData(prev => ({ ...prev, loading: true, error: null }))
 
+      // Build query parameters for entity filtering
+      const entityQueryParam = hasSelection && selectedEntityIds.length > 0 
+        ? `?entityIds=${selectedEntityIds.join(',')}` 
+        : ''
+
       // Charger les données en parallèle
-      const [entitiesResponse, assetsResponse, debtsResponse] = await Promise.all([
-        fetch('/api/entities').catch(err => ({ ok: false, error: err.message })),
-        fetch('/api/assets').catch(err => ({ ok: false, error: err.message })),
-        fetch('/api/debts').catch(err => ({ ok: false, error: err.message }))
-      ])
+      console.log('🔄 Fetching entities...')
+      const entitiesResponse = await fetch('/api/entities').catch(err => {
+        console.error('❌ Error fetching entities:', err)
+        return { ok: false, error: err.message }
+      })
+
+      console.log('🔄 Fetching assets with filter...')
+      const assetsResponse = await fetch(`/api/assets${entityQueryParam}`).catch(err => {
+        console.error('❌ Error fetching assets:', err)
+        return { ok: false, error: err.message }
+      })
+
+      console.log('🔄 Fetching debts with filter...')
+      const debtsResponse = await fetch(`/api/debts${entityQueryParam}`).catch(err => {
+        console.error('❌ Error fetching debts:', err)
+        return { ok: false, error: err.message }
+      })
+
+      console.log('📊 API Responses status:', {
+        entities: entitiesResponse.ok,
+        assets: assetsResponse.ok,
+        debts: debtsResponse.ok
+      })
 
       // Gérer les réponses avec des fallbacks
-      const entities = entitiesResponse.ok ? await entitiesResponse.json() : []
-      const assets = assetsResponse.ok ? await assetsResponse.json() : []
-      const debtsData = debtsResponse.ok ? await debtsResponse.json() : { debts: [] }
+      let entities = []
+      let assets = []
+      let debtsData = { debts: [] }
+
+      if (entitiesResponse.ok) {
+        entities = await entitiesResponse.json()
+        console.log('✅ Entities loaded:', entities.length)
+      } else {
+        console.warn('⚠️ Failed to load entities')
+      }
+
+      if (assetsResponse.ok) {
+        assets = await assetsResponse.json()
+        console.log('✅ Assets loaded:', assets.length)
+      } else {
+        console.warn('⚠️ Failed to load assets')
+      }
+
+      if (debtsResponse.ok) {
+        debtsData = await debtsResponse.json()
+        console.log('✅ Debts loaded:', debtsData.debts?.length || 0)
+      } else {
+        console.warn('⚠️ Failed to load debts')
+      }
 
       // Vérifier si c'est un Array (pour les cas où l'API retourne directement un tableau)
       const entitiesArray = Array.isArray(entities) ? entities : []
@@ -150,11 +217,11 @@ export default function DashboardContent() {
       }))
       setHasInitialized(true)
     }
-  }, [dashboardData.loading, hasInitialized])
+  }, [status, session, hasSelection, selectedEntityIds])
 
   useEffect(() => {
-    // Éviter les boucles infinies en vérifiant l'état et la session
-    if (status === 'authenticated' && !hasInitialized && !dashboardData.loading) {
+    // Simplified logic: load data when authenticated and not yet initialized
+    if (status === 'authenticated' && !hasInitialized) {
       console.log('🔄 useEffect: Loading dashboard data (authenticated)')
       loadDashboardData()
     } else if (status === 'loading') {
@@ -162,8 +229,9 @@ export default function DashboardContent() {
     } else if (status === 'unauthenticated') {
       console.log('🚫 useEffect: User not authenticated')
       setHasInitialized(true)
+      setDashboardData(prev => ({ ...prev, loading: false }))
     }
-  }, [status, hasInitialized, dashboardData.loading, loadDashboardData])
+  }, [status, hasInitialized, loadDashboardData])
 
   // Reset state when session changes
   useEffect(() => {
@@ -179,11 +247,28 @@ export default function DashboardContent() {
     }
   }, [status])
 
-  if (status === 'loading' || (dashboardData.loading && !hasInitialized)) {
+  // Reload data when entity filter changes (after initial load)
+  useEffect(() => {
+    if (status === 'authenticated' && hasInitialized) {
+      console.log('🔄 Entity filter changed, reloading data...')
+      loadDashboardData()
+    }
+  }, [selectedEntityIds, hasInitialized, status, loadDashboardData])
+
+  // Show loading state
+  if (status === 'loading' || (status === 'authenticated' && !hasInitialized)) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-        <span className="ml-2">Chargement du tableau de bord...</span>
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-4"></div>
+          <div className="space-y-2">
+            <p className="text-gray-700">Chargement du tableau de bord...</p>
+            <p className="text-sm text-gray-500">Status: {status}</p>
+            <p className="text-sm text-gray-500">Session: {session ? 'Oui' : 'Non'}</p>
+            <p className="text-sm text-gray-500">Initialisé: {hasInitialized ? 'Oui' : 'Non'}</p>
+            <p className="text-sm text-gray-500">Données chargées: {dashboardData.loading ? 'En cours' : 'Terminé'}</p>
+          </div>
+        </div>
       </div>
     )
   }
@@ -204,14 +289,34 @@ export default function DashboardContent() {
     return (
       <div className="flex flex-col items-center justify-center h-64">
         <Database className="h-12 w-12 text-amber-500 mb-4" />
-        <p className="text-amber-600 mb-4">Service temporairement indisponible</p>
-        <p className="text-sm text-gray-500 mb-4">Les données seront disponibles une fois la base de données configurée</p>
-        <Button onClick={() => {
-          setHasInitialized(false)
-          loadDashboardData()
-        }} variant="outline">
-          Réessayer
-        </Button>
+        <p className="text-amber-600 mb-2">Service temporairement indisponible</p>
+        <p className="text-sm text-gray-500 mb-4">{dashboardData.error}</p>
+        <div className="space-y-2 text-center">
+          <p className="text-xs text-gray-400">Debug info:</p>
+          <p className="text-xs text-gray-400">Status: {status}</p>
+          <p className="text-xs text-gray-400">Session: {session ? session.user.email : 'Non connecté'}</p>
+          <p className="text-xs text-gray-400">Initialisé: {hasInitialized ? 'Oui' : 'Non'}</p>
+        </div>
+        <div className="mt-4 space-x-2">
+          <Button onClick={() => {
+            setHasInitialized(false)
+            loadDashboardData()
+          }} variant="outline">
+            Réessayer
+          </Button>
+          <Button onClick={() => {
+            console.log('📊 Dashboard Debug Info:', {
+              status,
+              session,
+              hasInitialized,
+              dashboardData,
+              error: dashboardData.error
+            })
+            alert('Informations de debug affichées dans la console (F12)')
+          }} variant="outline" size="sm">
+            Voir les logs
+          </Button>
+        </div>
       </div>
     )
   }
@@ -271,13 +376,13 @@ export default function DashboardContent() {
             </CardHeader>
             <CardContent>
               <div className="space-y-3">
-                <Link href="/entities/new" className="block">
+                <Link href="/entities" className="block">
                   <Button className="w-full justify-start" variant="outline">
                     <Users className="h-4 w-4 mr-2" />
                     Créer ma première entité
                   </Button>
                 </Link>
-                <Link href="/assets/new" className="block">
+                <Link href="/assets" className="block">
                   <Button className="w-full justify-start" variant="outline">
                     <Home className="h-4 w-4 mr-2" />
                     Ajouter un actif
@@ -345,7 +450,10 @@ export default function DashboardContent() {
   }
 
   // Dashboard normal avec données
-  const totalPatrimoine = calculateTotalPatrimony(dashboardData.assets)
+  const totalPatrimoine = calculateTotalPatrimony(
+    dashboardData.assets, 
+    hasSelection ? selectedEntityIds : undefined
+  )
   const totalDebts = dashboardData.debtsData.summary?.totalDebt || 0
   const patrimoineNet = totalPatrimoine - totalDebts
 
@@ -354,11 +462,66 @@ export default function DashboardContent() {
     if (!acc[category]) {
       acc[category] = { count: 0, value: 0, name: category }
     }
-    acc[category].count += 1
+    
     const latestValuation = asset.valuations[0]
-    acc[category].value += latestValuation?.value || 0
+    if (!latestValuation) return acc
+
+    const validatedValuation = validateValuation(latestValuation)
+    if (!validatedValuation.isValid) return acc
+
+    // Filtrer les ownerships par entités si spécifié
+    const relevantOwnerships = asset.ownerships ? asset.ownerships.filter((ownership) => 
+      !hasSelection || selectedEntityIds.length === 0 || selectedEntityIds.includes(ownership.ownerEntity?.id)
+    ) : []
+
+    const userOwnershipPercentage = calculateOwnershipPercentage(relevantOwnerships)
+    const assetValue = calculateAssetValue(validatedValuation.value, userOwnershipPercentage)
+    
+    acc[category].count += 1
+    acc[category].value += assetValue
     return acc
   }, {} as Record<string, { count: number; value: number; name: string }>)
+
+  // Préparer les données pour le treemap
+  const assetsForTreemap: AssetForTreemap[] = dashboardData.assets.map(asset => ({
+    id: asset.id,
+    name: asset.name,
+    assetType: {
+      id: asset.assetType.id,
+      name: asset.assetType.name,
+      category: asset.assetType.category,
+      color: asset.assetType.color
+    },
+    valuations: asset.valuations.map(val => ({
+      value: val.value,
+      valuationDate: val.valuationDate,
+      currency: val.currency
+    })),
+    ownerships: asset.ownerships.map(own => ({
+      percentage: own.percentage,
+      ownerEntity: {
+        id: own.ownerEntity.id,
+        name: own.ownerEntity.name,
+        type: own.ownerEntity.type
+      }
+    })),
+    debts: []
+  }))
+
+  const entitiesForTreemap: EntityForTreemap[] = dashboardData.entities.map(entity => ({
+    id: entity.id,
+    name: entity.name,
+    type: entity.type
+  }))
+
+  // Traiter les données pour le treemap
+  const treemapData = processAssetsForTreemap(assetsForTreemap, hasSelection ? selectedEntityIds : [])
+  
+  // Gérer le clic sur une catégorie du treemap
+  const handleCategoryClick = (category: CategoryData) => {
+    console.log('Category clicked:', category)
+    // Ici on pourrait naviguer vers une page de détail ou ouvrir un modal
+  }
 
   return (
     <div className="container mx-auto px-4 py-6">
@@ -367,13 +530,24 @@ export default function DashboardContent() {
           <h1 className="text-3xl font-bold text-gray-900">Tableau de bord</h1>
           <p className="text-gray-600">Vue d'ensemble de votre patrimoine</p>
         </div>
-        <Link href="/assets/new">
+        <Link href="/assets">
           <Button>
             <Plus className="h-4 w-4 mr-2" />
             Nouvel actif
           </Button>
         </Link>
       </div>
+
+      {/* Filtre d'entités */}
+      {dashboardData.entities.length > 0 && (
+        <EntityFilter
+          entities={dashboardData.entities}
+          selectedEntityIds={selectedEntityIds}
+          onSelectionChange={setSelectedEntityIds}
+          loading={dashboardData.loading}
+          className="mb-6"
+        />
+      )}
 
       {/* Métriques principales */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-6">
@@ -384,7 +558,7 @@ export default function DashboardContent() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-green-600">
-              {totalPatrimoine.toLocaleString('fr-FR')} €
+              {formatCurrency(totalPatrimoine)}
             </div>
             <p className="text-xs text-muted-foreground">
               {dashboardData.assets.length} actifs
@@ -399,7 +573,7 @@ export default function DashboardContent() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-red-600">
-              {totalDebts.toLocaleString('fr-FR')} €
+              {formatCurrency(totalDebts)}
             </div>
             <p className="text-xs text-muted-foreground">
               {dashboardData.debtsData.summary?.activeDebtsCount || 0} dettes actives
@@ -414,7 +588,7 @@ export default function DashboardContent() {
           </CardHeader>
           <CardContent>
             <div className={`text-2xl font-bold ${patrimoineNet >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-              {patrimoineNet.toLocaleString('fr-FR')} €
+              {formatCurrency(patrimoineNet)}
             </div>
             <p className="text-xs text-muted-foreground">
               {totalPatrimoine > 0 ? ((patrimoineNet / totalPatrimoine) * 100).toFixed(1) : '0'}% ratio net
@@ -442,23 +616,87 @@ export default function DashboardContent() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
         <Card>
           <CardHeader>
-            <CardTitle className="flex items-center">
-              <PieChartIcon className="h-5 w-5 mr-2" />
-              Répartition par catégorie
-            </CardTitle>
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle className="flex items-center">
+                  <PieChartIcon className="h-5 w-5 mr-2" />
+                  Répartition par catégorie
+                </CardTitle>
+                <CardDescription>
+                  Visualisation de la répartition de votre patrimoine
+                </CardDescription>
+              </div>
+              <div className="flex items-center space-x-2">
+                <Button
+                  variant={viewMode === 'pie' ? 'default' : 'outline'}
+                  size="sm"
+                  onClick={() => setViewMode('pie')}
+                >
+                  <PieChartIcon className="h-4 w-4" />
+                </Button>
+                <Button
+                  variant={viewMode === 'treemap' ? 'default' : 'outline'}
+                  size="sm"
+                  onClick={() => setViewMode('treemap')}
+                >
+                  <Building2 className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
           </CardHeader>
           <CardContent>
             {Object.keys(assetsByType).length > 0 ? (
-              <div className="space-y-4">
-                {Object.values(assetsByType).map((category) => (
-                  <div key={category.name} className="flex justify-between items-center">
-                    <span className="font-medium">{category.name}</span>
-                    <div className="text-right">
-                      <div className="font-bold">{category.value.toLocaleString('fr-FR')} €</div>
-                      <div className="text-sm text-gray-500">{category.count} actifs</div>
+              <div className="space-y-6">
+                {viewMode === 'pie' ? (
+                  <>
+                    {/* Graphique en secteurs */}
+                    <PatrimoineChart 
+                      data={Object.values(assetsByType).map((category, index) => ({
+                        name: category.name,
+                        value: category.value,
+                        percentage: totalPatrimoine > 0 ? (category.value / totalPatrimoine) * 100 : 0,
+                        color: `hsl(${(index * 60) % 360}, 70%, 50%)`
+                      }))}
+                    />
+                    
+                    {/* Liste détaillée */}
+                    <div className="space-y-3">
+                      {Object.values(assetsByType)
+                        .sort((a, b) => b.value - a.value)
+                        .map((category, index) => (
+                          <div key={category.name} className="flex justify-between items-center p-3 border rounded-lg">
+                            <div className="flex items-center space-x-3">
+                              <div 
+                                className="w-4 h-4 rounded-full" 
+                                style={{ backgroundColor: `hsl(${(index * 60) % 360}, 70%, 50%)` }}
+                              />
+                              <div>
+                                <div className="font-medium">{category.name}</div>
+                                <div className="text-sm text-gray-500">{category.count} actif{category.count > 1 ? 's' : ''}</div>
+                              </div>
+                            </div>
+                            <div className="text-right">
+                              <div className="font-bold">{formatCurrency(category.value)}</div>
+                              <div className="text-sm text-gray-500">
+                                {totalPatrimoine > 0 ? ((category.value / totalPatrimoine) * 100).toFixed(1) : '0'}%
+                              </div>
+                            </div>
+                          </div>
+                        ))}
                     </div>
+                  </>
+                ) : (
+                  /* Treemap */
+                  <div className="h-80">
+                    <TreemapPatrimoine
+                      categories={treemapData.categories}
+                      title=""
+                      height={320}
+                      loading={dashboardData.loading}
+                      onCategoryClick={handleCategoryClick}
+                    />
                   </div>
-                ))}
+                )}
               </div>
             ) : (
               <div className="text-center text-gray-500 py-8">
@@ -497,7 +735,7 @@ export default function DashboardContent() {
               <div className="text-center text-gray-500 py-8">
                 <Users className="h-12 w-12 mx-auto mb-4 opacity-50" />
                 <p>Aucune entité créée</p>
-                <Link href="/entities/new" className="inline-block mt-2">
+                <Link href="/entities" className="inline-block mt-2">
                   <Button variant="outline" size="sm">
                     Créer une entité
                   </Button>
@@ -516,13 +754,13 @@ export default function DashboardContent() {
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <Link href="/entities/new" className="flex flex-col items-center justify-center">
+            <Link href="/entities" className="flex flex-col items-center justify-center">
               <Button variant="outline" className="h-20 w-full">
                 <Users className="h-6 w-6 mb-2" />
                 Ajouter une entité
               </Button>
             </Link>
-            <Link href="/assets/new" className="flex flex-col items-center justify-center">
+            <Link href="/assets" className="flex flex-col items-center justify-center">
               <Button variant="outline" className="h-20 w-full">
                 <Home className="h-6 w-6 mb-2" />
                 Ajouter un actif

@@ -17,11 +17,18 @@ import {
   DrawerTitle, 
   DrawerDescription 
 } from "@/components/ui/Drawer"
-import { TrendingUp, Building2, Plus, Eye, Edit, Euro, Calendar, CreditCard, Save, X, Trash2, Users, Filter, List } from "lucide-react"
+import { TrendingUp, Building2, Plus, Eye, Edit, Euro, Calendar, CreditCard, Save, X, Trash2, Users, Filter, List, BarChart3 } from "lucide-react"
 import { toast } from "sonner"
 import { DynamicAssetForm } from "@/components/forms/DynamicAssetForm"
 import { BaseAssetFormData } from "@/types/assets"
 import { ConfirmationDialog } from "@/components/ui/Dialog"
+import { 
+  formatCurrency, 
+  calculateAssetValue, 
+  calculateOwnershipPercentage, 
+  validateValuation 
+} from "@/utils/financial-calculations"
+import { useRouter } from "next/navigation"
 
 interface Asset {
   id: string
@@ -108,6 +115,8 @@ export default function AssetsPage() {
     valuationDate: new Date().toISOString().split('T')[0],
     metadata: {}
   })
+
+  const router = useRouter()
 
   useEffect(() => {
     if (status === "loading") return
@@ -579,13 +588,15 @@ export default function AssetsPage() {
   // Calculate statistics (mise à jour pour tenir compte du filtre)
   const totalValue = filteredAssets.reduce((sum, asset) => {
     const latestValuation = asset.valuations[0]
-    const assetValue = latestValuation ? Number(latestValuation.value) : 0
+    if (!latestValuation) return sum
     
-    // Calculate user's total ownership percentage across all their entities
-    const userOwnershipPercentage = asset.ownerships
-      .reduce((total, ownership) => total + ownership.percentage, 0) / 100
+    const validatedValuation = validateValuation(latestValuation)
+    if (!validatedValuation.isValid) return sum
     
-    return sum + (assetValue * userOwnershipPercentage)
+    const userOwnershipPercentage = calculateOwnershipPercentage(asset.ownerships)
+    const assetValue = calculateAssetValue(validatedValuation.value, userOwnershipPercentage)
+    
+    return sum + assetValue
   }, 0)
 
   const assetsByType = assetTypes.map(type => ({
@@ -595,13 +606,15 @@ export default function AssetsPage() {
       .filter(asset => asset.assetType.id === type.id)
       .reduce((sum, asset) => {
         const latestValuation = asset.valuations[0]
-        const assetValue = latestValuation ? Number(latestValuation.value) : 0
+        if (!latestValuation) return sum
         
-        // Calculate user's total ownership percentage across all their entities
-        const userOwnershipPercentage = asset.ownerships
-          .reduce((total, ownership) => total + ownership.percentage, 0) / 100
+        const validatedValuation = validateValuation(latestValuation)
+        if (!validatedValuation.isValid) return sum
         
-        return sum + (assetValue * userOwnershipPercentage)
+        const userOwnershipPercentage = calculateOwnershipPercentage(asset.ownerships)
+        const assetValue = calculateAssetValue(validatedValuation.value, userOwnershipPercentage)
+        
+        return sum + assetValue
       }, 0)
   }))
 
@@ -671,7 +684,7 @@ export default function AssetsPage() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              {totalValue.toLocaleString('fr-FR', { style: 'currency', currency: 'EUR' })}
+              {formatCurrency(totalValue)}
             </div>
             <p className="text-xs text-muted-foreground">
               {selectedAssetTypeId ? `Valeur ${getSelectedAssetTypeName()}` : 'Valeur du portefeuille'}
@@ -762,28 +775,26 @@ export default function AssetsPage() {
                 </div>
                 <div className="text-right">
                   <div className={`font-medium ${selectedAssetTypeId === type.id ? 'text-primary' : ''}`}>
-                    {type.value.toLocaleString('fr-FR', { 
-                      style: 'currency', 
-                      currency: 'EUR' 
-                    })}
+                    {formatCurrency(type.value)}
                   </div>
                   <div className="text-xs text-muted-foreground">
                     {/* Calcul du pourcentage basé sur la valeur totale de TOUS les actifs */}
-                    {assets.reduce((sum, asset) => {
-                      const latestValuation = asset.valuations[0]
-                      const assetValue = latestValuation ? Number(latestValuation.value) : 0
-                      const userOwnershipPercentage = asset.ownerships
-                        .reduce((total, ownership) => total + ownership.percentage, 0) / 100
-                      return sum + (assetValue * userOwnershipPercentage)
-                    }, 0) > 0 ? (
-                      (type.value / assets.reduce((sum, asset) => {
+                    {(() => {
+                      const totalAllAssets = assets.reduce((sum, asset) => {
                         const latestValuation = asset.valuations[0]
-                        const assetValue = latestValuation ? Number(latestValuation.value) : 0
-                        const userOwnershipPercentage = asset.ownerships
-                          .reduce((total, ownership) => total + ownership.percentage, 0) / 100
-                        return sum + (assetValue * userOwnershipPercentage)
-                      }, 0) * 100).toFixed(1)
-                    ) : 0}%
+                        if (!latestValuation) return sum
+                        
+                        const validatedValuation = validateValuation(latestValuation)
+                        if (!validatedValuation.isValid) return sum
+                        
+                        const userOwnershipPercentage = calculateOwnershipPercentage(asset.ownerships)
+                        const assetValue = calculateAssetValue(validatedValuation.value, userOwnershipPercentage)
+                        
+                        return sum + assetValue
+                      }, 0)
+                      
+                      return totalAllAssets > 0 ? ((type.value / totalAllAssets) * 100).toFixed(1) : '0'
+                    })()}%
                   </div>
                 </div>
               </div>
@@ -904,10 +915,7 @@ export default function AssetsPage() {
                       <div className="text-right">
                         <div className="font-medium">
                           {latestValuation 
-                            ? Number(latestValuation.value).toLocaleString('fr-FR', { 
-                                style: 'currency', 
-                                currency: 'EUR' 
-                              })
+                            ? formatCurrency(Number(latestValuation.value))
                             : 'Non valorisé'
                           }
                         </div>
@@ -925,8 +933,24 @@ export default function AssetsPage() {
                         <Button 
                           variant="ghost" 
                           size="sm" 
+                          title="Voir les détails"
+                          onClick={() => router.push(`/assets/${asset.id}`)}
+                        >
+                          <BarChart3 className="h-4 w-4" />
+                        </Button>
+                        <Button 
+                          variant="ghost" 
+                          size="sm" 
+                          title="Gérer les valorisations"
+                          onClick={() => router.push(`/assets/${asset.id}?tab=valuations`)}
+                        >
+                          <TrendingUp className="h-4 w-4" />
+                        </Button>
+                        <Button 
+                          variant="ghost" 
+                          size="sm" 
                           title="Gérer les financements"
-                          onClick={() => window.location.href = `/assets/${asset.id}/debts`}
+                          onClick={() => router.push(`/assets/${asset.id}/debts`)}
                         >
                           <CreditCard className="h-4 w-4" />
                         </Button>
@@ -1039,10 +1063,7 @@ export default function AssetsPage() {
                           <div>
                             <Label className="text-xs font-medium text-green-800">Valeur actuelle</Label>
                             <p className="text-2xl font-bold text-green-900">
-                              {Number(viewingAsset.valuations[0].value).toLocaleString('fr-FR', { 
-                                style: 'currency', 
-                                currency: 'EUR' 
-                              })}
+                              {formatCurrency(Number(viewingAsset.valuations[0].value))}
                             </p>
                           </div>
                           <div className="text-right">
@@ -1060,10 +1081,7 @@ export default function AssetsPage() {
                               {viewingAsset.valuations.slice(1).map((valuation, index) => (
                                 <div key={index} className="flex justify-between items-center p-2 border rounded">
                                   <span className="text-sm">
-                                    {Number(valuation.value).toLocaleString('fr-FR', { 
-                                      style: 'currency', 
-                                      currency: 'EUR' 
-                                    })}
+                                    {formatCurrency(Number(valuation.value))}
                                   </span>
                                   <span className="text-xs text-muted-foreground">
                                     {new Date(valuation.valuationDate).toLocaleDateString('fr-FR')}
@@ -1130,10 +1148,7 @@ export default function AssetsPage() {
                             <div className="text-sm text-red-700">Doit rembourser</div>
                             <div className="text-lg font-bold text-red-800">
                               {viewingAsset.valuations.length > 0 
-                                ? Number(viewingAsset.valuations[0].value).toLocaleString('fr-FR', { 
-                                    style: 'currency', 
-                                    currency: 'EUR' 
-                                  })
+                                ? formatCurrency(Number(viewingAsset.valuations[0].value))
                                 : '-'
                               }
                             </div>
@@ -1233,7 +1248,7 @@ export default function AssetsPage() {
                       <Button 
                         variant="outline" 
                         className="h-16 flex flex-col items-center justify-center"
-                        onClick={() => window.location.href = `/assets/${viewingAsset.id}/debts`}
+                        onClick={() => router.push(`/assets/${viewingAsset.id}/debts`)}
                       >
                         <CreditCard className="h-6 w-6 mb-1" />
                         <span className="text-sm">Financements</span>

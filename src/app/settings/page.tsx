@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/Button"
 import { Input } from "@/components/ui/Input"
 import { Label } from "@/components/ui/Label"
 import { Settings, User, Shield, Bell, Database } from "lucide-react"
-import { getServerSession } from "@/lib/auth-helper"
+import { getServerSession } from "@/lib/auth"
 
 export default async function SettingsPage() {
   const session = await getServerSession()

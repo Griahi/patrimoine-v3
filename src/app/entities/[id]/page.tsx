@@ -6,7 +6,7 @@ import { User, Building2, ArrowLeft, Edit, Euro, Calendar, MapPin, Hash, FileTex
 import Link from "next/link"
 import { EntityType } from "../../../generated/prisma"
 import EntityDeleteButton from "@/components/entities/EntityDeleteButton"
-import { getServerSession } from "@/lib/auth-helper"
+import { getServerSession } from "@/lib/auth"
 
 async function getEntity(entityId: string, userId: string) {
   try {
@@ -268,7 +268,7 @@ export default async function EntityDetailPage({ params }: { params: { id: strin
                   <p className="text-muted-foreground mb-4">
                     Cette entité ne détient actuellement aucun actif.
                   </p>
-                  <Link href="/assets/new">
+                  <Link href="/assets">
                     <Button>Ajouter un actif</Button>
                   </Link>
                 </div>

@@ -1,5 +1,5 @@
 import { redirect } from 'next/navigation'
-import { getServerSession } from '@/lib/auth-helper'
+import { getServerSession } from '@/lib/auth'
 
 export default async function PredictionsPage() {
   // Vérifier l'authentification

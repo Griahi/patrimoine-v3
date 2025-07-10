@@ -1,18 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
-import { getUserIdFromRequest } from '@/lib/auth-utils'
+import { getUserFromRequest } from '@/lib/auth'
 
 export async function GET(request: NextRequest) {
   try {
-    const userId = await getUserIdFromRequest(request);
-    if (!userId) {
+    const user = await getUserFromRequest(request);
+    if (!user) {
       return NextResponse.json({ error: 'Non autorisé' }, { status: 401 });
     }
 
-    console.log('📋 GET /api/entities - userId:', userId)
+    console.log('📋 GET /api/entities - userId:', user.id)
 
     const entities = await prisma.entity.findMany({
-      where: { userId },
+      where: { userId: user.id },
       include: {
         ownedAssets: {
           include: {
@@ -42,11 +42,11 @@ export async function POST(request: NextRequest) {
   try {
     console.log('🚀 POST /api/entities - Start')
     
-    const userId = await getUserIdFromRequest(request);
-    console.log('🔑 Auth result:', { userId })
+    const user = await getUserFromRequest(request);
+    console.log('🔑 Auth result:', { userId: user?.id })
     
-    if (!userId) {
-      console.log('❌ No userId, returning 401')
+    if (!user) {
+      console.log('❌ No user, returning 401')
       return NextResponse.json({ 
         error: 'Non autorisé', 
         message: 'Session invalide ou expirée. Veuillez vous reconnecter.' 
@@ -70,12 +70,12 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Type d'entité invalide. Utilisez PHYSICAL_PERSON ou LEGAL_ENTITY" }, { status: 400 })
     }
 
-    console.log('➕ POST /api/entities - Creating entity:', { name, type, userId })
+    console.log('➕ POST /api/entities - Creating entity:', { name, type, userId: user.id })
 
     const entityData = {
       name,
       type,
-      userId,
+      userId: user.id,
       taxId: taxId || null,
       address: address && Object.keys(address).length > 0 ? address : null,
       metadata: metadata && Object.keys(metadata).length > 0 ? metadata : null,
@@ -112,8 +112,8 @@ export async function POST(request: NextRequest) {
 
 export async function PUT(request: NextRequest) {
   try {
-    const userId = await getUserIdFromRequest(request);
-    if (!userId) {
+    const user = await getUserFromRequest(request);
+    if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
@@ -127,11 +127,11 @@ export async function PUT(request: NextRequest) {
       )
     }
 
-    console.log('🔄 PUT /api/entities - Updating entity:', { id, name, type, userId })
+    console.log('🔄 PUT /api/entities - Updating entity:', { id, name, type, userId: user.id })
 
     // Vérifier que l'entité existe
     const existingEntity = await prisma.entity.findFirst({
-      where: { id, userId }
+      where: { id, userId: user.id }
     });
     
     if (!existingEntity) {

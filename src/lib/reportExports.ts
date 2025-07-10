@@ -1,27 +1,49 @@
-import * as XLSX from 'xlsx'
 import { saveAs } from 'file-saver'
+import { logger } from './logger'
+import { secureExcelExport, securePDFExport, formatDataForExport } from './secure-export'
 
 // Type pour html2pdf global
 declare const html2pdf: any
 
 // Dynamically import html2pdf pour éviter les erreurs SSR
 const loadHtml2Pdf = async () => {
-  if (typeof window !== 'undefined') {
-    try {
-      // Essayer d'abord le script global
-      if (typeof (window as any).html2pdf !== 'undefined') {
-        return (window as any).html2pdf
-      }
-      
-      // Sinon, importer dynamiquement
-      const html2pdfModule = await import('html2pdf.js')
-      return html2pdfModule.default || html2pdfModule
-    } catch (error) {
-      console.error('Failed to load html2pdf:', error)
-      throw new Error('html2pdf library not available')
-    }
+  if (typeof window === 'undefined') {
+    logger.warn('html2pdf: Not available server-side', undefined, 'ReportExportService')
+    return null
   }
-  return null
+
+  try {
+    // Essayer d'abord le script global
+    if (typeof (window as any).html2pdf !== 'undefined') {
+      logger.info('html2pdf: Using global script', undefined, 'ReportExportService')
+      return (window as any).html2pdf
+    }
+    
+    // Sinon, essayer le CDN
+    logger.info('html2pdf: Loading from CDN...', undefined, 'ReportExportService')
+    
+    // Charger html2pdf via CDN si pas déjà présent
+    return new Promise((resolve, reject) => {
+      const script = document.createElement('script')
+      script.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js'
+      script.onload = () => {
+        if (typeof (window as any).html2pdf !== 'undefined') {
+          logger.info('html2pdf: Loaded successfully from CDN', undefined, 'ReportExportService')
+          resolve((window as any).html2pdf)
+        } else {
+          reject(new Error('html2pdf not available after script load'))
+        }
+      }
+      script.onerror = () => {
+        reject(new Error('Failed to load html2pdf from CDN'))
+      }
+      document.head.appendChild(script)
+    })
+    
+  } catch (error) {
+    logger.error('html2pdf: Load error', error, 'ReportExportService')
+    throw new Error('html2pdf library not available')
+  }
 }
 
 interface ExportData {
@@ -76,25 +98,220 @@ export class ReportExportService {
   static checkDependencies() {
     const status = {
       browser: typeof window !== 'undefined',
-      xlsx: typeof XLSX !== 'undefined',
+      exceljs: typeof secureExcelExport !== 'undefined',
       fileSaver: typeof saveAs !== 'undefined',
       html2pdf: false
     }
     
-    // Vérifier html2pdf de manière asynchrone
-    loadHtml2Pdf().then(html2pdf => {
-      status.html2pdf = !!html2pdf
-      console.log('Dependencies check:', status)
-    }).catch(() => {
-      status.html2pdf = false
-      console.log('Dependencies check:', status)
-    })
+    // Ne pas vérifier html2pdf au chargement pour éviter les erreurs
+    // La vérification se fera au moment de l'export PDF
+    logger.info('Dependencies check:', status, 'ReportExportService')
     
     return status
   }
+
+  /**
+   * Export Excel sécurisé utilisant ExcelJS
+   */
+  static async exportToExcelSecure(data: ExportData, filename: string = 'rapport-patrimonial'): Promise<void> {
+    try {
+      logger.info('Démarrage export Excel sécurisé', { filename, assetsCount: data.assets.length }, 'ReportExportService')
+      
+      // Vérifier que nous sommes côté client
+      if (typeof window === 'undefined') {
+        throw new Error('Export Excel disponible uniquement côté client')
+      }
+
+      // Formater les données pour l'export sécurisé
+      const exportData = {
+        sheets: [
+          {
+            name: 'Résumé',
+            data: [
+              {
+                'Métrique': 'Patrimoine Total',
+                'Valeur': data.totalValue.toString(),
+                'Devise': data.filters.currency,
+                'Date': new Date().toLocaleDateString('fr-FR')
+              },
+              {
+                'Métrique': 'Nombre d\'actifs',
+                'Valeur': data.assets.length.toString(),
+                'Devise': '',
+                'Date': new Date().toLocaleDateString('fr-FR')
+              },
+              {
+                'Métrique': 'Types d\'actifs',
+                'Valeur': Object.keys(data.assetsByType).length.toString(),
+                'Devise': '',
+                'Date': new Date().toLocaleDateString('fr-FR')
+              }
+            ],
+            columns: [
+              { header: 'Métrique', key: 'Métrique', width: 25 },
+              { header: 'Valeur', key: 'Valeur', width: 15 },
+              { header: 'Devise', key: 'Devise', width: 8 },
+              { header: 'Date', key: 'Date', width: 15 }
+            ]
+          },
+          {
+            name: 'Répartition par type',
+            data: Object.entries(data.assetsByType)
+              .sort(([,a], [,b]) => b.value - a.value)
+              .map(([type, typeData]) => ({
+                'Type d\'actif': type,
+                'Valeur': typeData.value.toString(),
+                'Devise': data.filters.currency,
+                'Pourcentage': `${typeData.percentage.toFixed(1)}%`,
+                'Nombre d\'actifs': typeData.count.toString()
+              })),
+            columns: [
+              { header: 'Type d\'actif', key: 'Type d\'actif', width: 25 },
+              { header: 'Valeur', key: 'Valeur', width: 15 },
+              { header: 'Devise', key: 'Devise', width: 8 },
+              { header: 'Pourcentage', key: 'Pourcentage', width: 12 },
+              { header: 'Nombre d\'actifs', key: 'Nombre d\'actifs', width: 15 }
+            ]
+          },
+          {
+            name: 'Détail des actifs',
+            data: data.assets.map(asset => {
+              const latestValuation = asset.valuations[0]
+              return {
+                'Nom de l\'actif': asset.name,
+                'Type d\'actif': asset.assetType.name,
+                'Valeur actuelle': (latestValuation?.value || 0).toString(),
+                'Devise': latestValuation?.currency || data.filters.currency,
+                'Date de valorisation': latestValuation?.valuationDate ? new Date(latestValuation.valuationDate).toLocaleDateString('fr-FR') : 'Non valorisé',
+                'Statut': latestValuation ? 'Valorisé' : 'Non valorisé'
+              }
+            }),
+            columns: [
+              { header: 'Nom de l\'actif', key: 'Nom de l\'actif', width: 30 },
+              { header: 'Type d\'actif', key: 'Type d\'actif', width: 20 },
+              { header: 'Valeur actuelle', key: 'Valeur actuelle', width: 15 },
+              { header: 'Devise', key: 'Devise', width: 8 },
+              { header: 'Date de valorisation', key: 'Date de valorisation', width: 15 },
+              { header: 'Statut', key: 'Statut', width: 12 }
+            ]
+          }
+        ],
+        filename: filename,
+        title: 'Rapport Patrimonial',
+        description: 'Données exportées depuis le gestionnaire de patrimoine'
+      }
+
+      // Ajouter la feuille des entités si multi-entités
+      if (data.entities.length > 1) {
+        exportData.sheets.push({
+          name: 'Entités',
+          data: data.entities.map(entity => {
+            const entityAssetsCount = data.assets.filter(asset => 
+              asset.ownerships && asset.ownerships.some(ownership => 
+                ownership.ownerEntity.id === entity.id
+              )
+            ).length
+            
+            return {
+              'Nom de l\'entité': entity.name,
+              'Type d\'entité': entity.type === 'PHYSICAL_PERSON' ? 'Personne physique' : 'Personne morale',
+              'Nombre d\'actifs détenus': entityAssetsCount.toString()
+            }
+          }),
+          columns: [
+            { header: 'Nom de l\'entité', key: 'Nom de l\'entité', width: 25 },
+            { header: 'Type d\'entité', key: 'Type d\'entité', width: 18 },
+            { header: 'Nombre d\'actifs détenus', key: 'Nombre d\'actifs détenus', width: 20 }
+          ]
+        })
+      }
+
+      // Exporter avec le service sécurisé
+      await secureExcelExport.exportData(exportData)
+      
+      logger.info('Export Excel sécurisé terminé avec succès', undefined, 'ReportExportService')
+      
+      // Notification de succès
+      if (typeof window !== 'undefined' && (window as any).toast) {
+        (window as any).toast.success('Fichier Excel exporté avec succès (sécurisé)')
+      }
+      
+    } catch (error) {
+      logger.error('Erreur lors de l\'export Excel sécurisé', error, 'ReportExportService')
+      
+      // Message d'erreur plus informatif
+      let errorMessage = 'Erreur lors de l\'export Excel sécurisé.'
+      if (error instanceof Error) {
+        errorMessage = `Erreur Excel: ${error.message}`
+      }
+      
+      alert(errorMessage)
+      
+      // Notification d'erreur
+      if (typeof window !== 'undefined' && (window as any).toast) {
+        (window as any).toast.error(errorMessage)
+      }
+    }
+  }
   
       /**
-   * Export en PDF - COPIE DE LA MÉTHODE D'IMPRESSION QUI FONCTIONNE
+   * Export PDF sécurisé
+   */
+  static async exportToPDFSecure(
+    elementId: string, 
+    filename: string = 'rapport-patrimonial',
+    reportTitle: string = 'Rapport Patrimonial',
+    entityName?: string,
+    subtitle?: string
+  ): Promise<void> {
+    try {
+      logger.info('Démarrage export PDF sécurisé', { 
+        elementId, 
+        filename, 
+        reportTitle, 
+        entityName, 
+        subtitle 
+      }, 'ReportExportService')
+      
+      // Chargement html2pdf
+      if (typeof window === 'undefined') {
+        throw new Error('PDF côté client uniquement')
+      }
+      
+      // Trouver l'élément RÉEL
+      const element = document.getElementById(elementId)
+      if (!element) {
+        logger.error('Element non trouvé:', elementId, 'ReportExportService')
+        throw new Error(`Élément '${elementId}' non trouvé`)
+      }
+      
+      logger.info('Élément trouvé, utilisation du service d\'export PDF sécurisé', undefined, 'ReportExportService')
+      
+      // Préparer les options pour le service sécurisé
+      const options = {
+        title: reportTitle,
+        entityName: entityName,
+        subtitle: subtitle || `Généré le ${new Date().toLocaleDateString('fr-FR')}`
+      }
+      
+      // Utiliser le service d'export PDF sécurisé avec les options
+      await securePDFExport.exportElement(element, filename, options)
+      
+      logger.info('Export PDF sécurisé terminé avec succès', undefined, 'ReportExportService')
+      
+      // Notification
+      if (typeof window !== 'undefined' && (window as any).toast) {
+        (window as any).toast.success('PDF exporté avec succès (sécurisé)')
+      }
+      
+    } catch (error) {
+      logger.error('Erreur lors de l\'export PDF sécurisé', error, 'ReportExportService')
+      alert(`Erreur: ${error instanceof Error ? error.message : 'PDF failed'}`)
+    }
+  }
+
+  /**
+   * Export en PDF - COPIE DE LA MÉTHODE D'IMPRESSION QUI FONCTIONNE (LEGACY)
    */
   static async exportToPDF(
     elementId: string, 
@@ -102,7 +319,7 @@ export class ReportExportService {
     reportTitle: string = 'Rapport Patrimonial'
   ): Promise<void> {
     try {
-      console.log('🚀 EXPORT PDF - COMME L\'IMPRESSION QUI FONCTIONNE')
+      logger.info('Export PDF legacy', { elementId, filename, reportTitle }, 'ReportExportService')
       
       // Chargement html2pdf
       if (typeof window === 'undefined') {
@@ -117,11 +334,11 @@ export class ReportExportService {
       // Trouver l'élément RÉEL (comme dans printReport)
       const element = document.getElementById(elementId)
       if (!element) {
-        console.error('Element non trouvé:', elementId)
+        logger.error('Element non trouvé:', elementId, 'ReportExportService')
         throw new Error(`Élément '${elementId}' non trouvé`)
       }
       
-      console.log('✅ Élément trouvé, utilisation du contenu RÉEL')
+      logger.info('Élément trouvé, utilisation du contenu RÉEL', undefined, 'ReportExportService')
       
       // Utiliser la MÊME approche que printReport mais pour PDF
       // Créer un conteneur temporaire avec les styles d'impression
@@ -195,7 +412,7 @@ export class ReportExportService {
       printContainer.innerHTML = pdfHTML
       document.body.appendChild(printContainer)
       
-      console.log('📄 Génération PDF avec le contenu réel...')
+      logger.info('Génération PDF avec le contenu réel...', undefined, 'ReportExportService')
       
       // Configuration PDF optimisée
       const options = {
@@ -219,7 +436,7 @@ export class ReportExportService {
         if (document.body.contains(printContainer)) {
           document.body.removeChild(printContainer)
         }
-        console.log('✅ PDF généré!')
+        logger.info('PDF généré!', undefined, 'ReportExportService')
       }, 2000)
       
       // Notification
@@ -228,7 +445,7 @@ export class ReportExportService {
       }
       
     } catch (error) {
-      console.error('❌ Erreur PDF:', error)
+      logger.error('Erreur PDF:', error, 'ReportExportService')
       alert(`Erreur: ${error instanceof Error ? error.message : 'PDF failed'}`)
     }
   }
@@ -236,178 +453,14 @@ export class ReportExportService {
 
 
   /**
-   * Export en Excel
+   * Export en Excel (redirects to secure method)
    */
   static exportToExcel(data: ExportData, filename: string = 'rapport-patrimonial.xlsx') {
-    try {
-      console.log('Démarrage export Excel...', { filename, assetsCount: data.assets.length })
-      
-      // Vérifier que nous sommes côté client
-      if (typeof window === 'undefined') {
-        throw new Error('Export Excel disponible uniquement côté client')
-      }
-
-      // Vérifier que XLSX est disponible
-      if (!XLSX) {
-        throw new Error('Librairie XLSX non disponible')
-      }
-
-      // Créer un nouveau workbook
-      const wb = XLSX.utils.book_new()
-
-      // Feuille 1: Résumé
-      const summaryData = [
-        ['Rapport Patrimonial'],
-        ['Date de génération', new Date().toLocaleDateString('fr-FR')],
-        ['Heure de génération', new Date().toLocaleTimeString('fr-FR')],
-        [''],
-        ['RÉSUMÉ GÉNÉRAL'],
-        ['Patrimoine Total', data.totalValue.toString(), data.filters.currency],
-        ['Nombre d\'actifs', data.assets.length.toString()],
-        ['Types d\'actifs', Object.keys(data.assetsByType).length.toString()],
-        ['Période analysée', data.filters.period],
-        ['Type de rapport', data.filters.reportType],
-        [''],
-        ['RÉPARTITION PAR TYPE D\'ACTIF'],
-        ['Type d\'actif', 'Valeur', 'Devise', 'Pourcentage', 'Nombre d\'actifs']
-      ]
-
-      // Ajouter les données de répartition triées par valeur
-      Object.entries(data.assetsByType)
-        .sort(([,a], [,b]) => b.value - a.value)
-        .forEach(([type, typeData]) => {
-          summaryData.push([
-            type,
-            typeData.value.toString(),
-            data.filters.currency,
-            `${typeData.percentage.toFixed(1)}%`,
-            typeData.count.toString()
-          ])
-        })
-
-      const ws_summary = XLSX.utils.aoa_to_sheet(summaryData)
-      
-      // Largeurs de colonnes pour le résumé
-      ws_summary['!cols'] = [
-        { wch: 25 }, // Type
-        { wch: 15 }, // Valeur
-        { wch: 8 },  // Devise
-        { wch: 12 }, // Pourcentage
-        { wch: 15 }  // Nombre
-      ]
-      
-      XLSX.utils.book_append_sheet(wb, ws_summary, 'Résumé')
-
-      // Feuille 2: Détail des actifs
-      const assetHeaders = [
-        'Nom de l\'actif',
-        'Type d\'actif',
-        'Valeur actuelle',
-        'Devise',
-        'Date de valorisation',
-        'Statut'
-      ]
-
-      const assetData = [assetHeaders]
-      data.assets.forEach(asset => {
-        const latestValuation = asset.valuations[0]
-        assetData.push([
-          asset.name,
-          asset.assetType.name,
-          (latestValuation?.value || 0).toString(),
-          latestValuation?.currency || data.filters.currency,
-          latestValuation?.valuationDate ? new Date(latestValuation.valuationDate).toLocaleDateString('fr-FR') : 'Non valorisé',
-          latestValuation ? 'Valorisé' : 'Non valorisé'
-        ])
-      })
-
-      const ws_assets = XLSX.utils.aoa_to_sheet(assetData)
-      
-      // Largeurs de colonnes pour les actifs
-      ws_assets['!cols'] = [
-        { wch: 30 }, // Nom
-        { wch: 20 }, // Type
-        { wch: 15 }, // Valeur
-        { wch: 8 },  // Devise
-        { wch: 15 }, // Date
-        { wch: 12 }  // Statut
-      ]
-      
-      XLSX.utils.book_append_sheet(wb, ws_assets, 'Détail des actifs')
-
-      // Feuille 3: Entités (si multi-entités)
-      if (data.entities.length > 1) {
-        const entityHeaders = ['Nom de l\'entité', 'Type d\'entité', 'Nombre d\'actifs détenus']
-        const entityData = [entityHeaders]
-        
-        data.entities.forEach(entity => {
-          // Compter les actifs de cette entité
-          const entityAssetsCount = data.assets.filter(asset => 
-            asset.ownerships && asset.ownerships.some(ownership => 
-              ownership.ownerEntity.id === entity.id
-            )
-          ).length
-          
-          entityData.push([
-            entity.name,
-            entity.type === 'PHYSICAL_PERSON' ? 'Personne physique' : 'Personne morale',
-            entityAssetsCount.toString()
-          ])
-        })
-
-        const ws_entities = XLSX.utils.aoa_to_sheet(entityData)
-        
-        // Largeurs de colonnes pour les entités
-        ws_entities['!cols'] = [
-          { wch: 25 }, // Nom
-          { wch: 18 }, // Type
-          { wch: 20 }  // Nombre d'actifs
-        ]
-        
-        XLSX.utils.book_append_sheet(wb, ws_entities, 'Entités')
-      }
-
-      console.log('Workbook créé, génération du fichier...')
-
-      // Sauvegarder le fichier
-      const wbout = XLSX.write(wb, { 
-        bookType: 'xlsx', 
-        type: 'array',
-        compression: true
-      })
-      const blob = new Blob([wbout], { 
-        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' 
-      })
-      
-      saveAs(blob, filename)
-      
-      console.log('Excel exporté avec succès')
-      
-      // Notification de succès
-      if (typeof window !== 'undefined' && (window as any).toast) {
-        (window as any).toast.success('Fichier Excel exporté avec succès')
-      }
-      
-    } catch (error) {
-      console.error('Erreur lors de l\'export Excel:', error)
-      
-      // Message d'erreur plus informatif
-      let errorMessage = 'Erreur lors de l\'export Excel.'
-      if (error instanceof Error) {
-        if (error.message.includes('XLSX')) {
-          errorMessage = 'Librairie Excel non disponible. Veuillez actualiser la page.'
-        } else {
-          errorMessage = `Erreur Excel: ${error.message}`
-        }
-      }
-      
-      alert(errorMessage)
-      
-      // Notification d'erreur
-      if (typeof window !== 'undefined' && (window as any).toast) {
-        (window as any).toast.error(errorMessage)
-      }
-    }
+    // Retirer l'extension .xlsx si présente pour la méthode sécurisée
+    const baseFilename = filename.replace('.xlsx', '')
+    
+    // Utiliser la méthode sécurisée
+    return this.exportToExcelSecure(data, baseFilename)
   }
 
   /**

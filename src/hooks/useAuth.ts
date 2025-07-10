@@ -1,6 +1,6 @@
 'use client'
 
-import { useSessionContext } from '@/components/SessionProvider'
+import { useSession as useSessionProvider } from '@/components/SessionProvider'
 import { Session } from '@/lib/auth'
 
 interface UseSessionReturn {
@@ -9,8 +9,8 @@ interface UseSessionReturn {
 }
 
 export function useSession(): UseSessionReturn {
-  const { session, status } = useSessionContext()
-  return { data: session, status }
+  const { data, status } = useSessionProvider()
+  return { data, status }
 }
 
 export async function signOut(): Promise<void> {

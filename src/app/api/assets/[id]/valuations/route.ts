@@ -4,7 +4,7 @@ import { prisma } from '@/lib/prisma'
 
 export async function POST(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const session = await auth()
@@ -13,7 +13,7 @@ export async function POST(
     }
 
     const { value, valuationDate, notes, source = 'MANUAL', currency = 'EUR' } = await request.json()
-    const assetId = params.id
+    const assetId = (await params).id
 
     // Vérifier que l'utilisateur possède cet actif
     const asset = await prisma.asset.findFirst({
@@ -100,7 +100,7 @@ export async function POST(
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const session = await auth()
@@ -108,7 +108,7 @@ export async function GET(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const assetId = params.id
+    const assetId = (await params).id
     const { searchParams } = new URL(request.url)
     const limit = parseInt(searchParams.get('limit') || '50')
     const offset = parseInt(searchParams.get('offset') || '0')
@@ -203,7 +203,7 @@ export async function GET(
 
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const session = await auth()
@@ -211,7 +211,7 @@ export async function DELETE(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const assetId = params.id
+    const assetId = (await params).id
     const { searchParams } = new URL(request.url)
     const valuationId = searchParams.get('valuationId')
 

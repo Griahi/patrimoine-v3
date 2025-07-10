@@ -7,7 +7,7 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
+  provider = "sqlite"
   url      = env("DATABASE_URL")
 }
 
@@ -153,7 +153,7 @@ model Ownership {
   ownerEntityId  String    // The entity that owns
   ownedAssetId   String?   // The asset being owned (optional)
   ownedEntityId  String?   // The entity being owned (optional)
-  percentage     Decimal   @db.Decimal(5,4) // Ownership percentage avec précision PostgreSQL
+  percentage     Decimal   // Ownership percentage (0.00 to 100.00)
   startDate      DateTime?
   endDate        DateTime?
   createdAt      DateTime  @default(now())
@@ -170,14 +170,14 @@ model Ownership {
 model Valuation {
   id            String          @id @default(cuid())
   assetId       String
-  value         Decimal         @db.Decimal(15,2) // Valeur monétaire avec précision PostgreSQL
+  value         Decimal         // Valeur monétaire
   currency      String          @default("EUR")
-  valuationDate DateTime        @db.Timestamptz // Timestamp avec timezone
+  valuationDate DateTime        // Timestamp
   source        ValuationSource @default(MANUAL)
   notes         String?
   metadata      Json?           // Additional data from APIs (price per share, volume, etc.)
-  createdAt     DateTime        @default(now()) @db.Timestamptz
-  updatedAt     DateTime        @updatedAt @db.Timestamptz
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
 
   asset Asset @relation(fields: [assetId], references: [id], onDelete: Cascade)
 
@@ -195,12 +195,12 @@ model BridgeConnection {
   userId       String
   accessToken  String
   refreshToken String
-  expiresAt    DateTime @db.Timestamptz
+  expiresAt    DateTime
   bankId       String?  // Bridge bank identifier
   bankName     String?  // Bank name for display
   isActive     Boolean  @default(true)
-  createdAt    DateTime @default(now()) @db.Timestamptz
-  updatedAt    DateTime @updatedAt @db.Timestamptz
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -212,16 +212,16 @@ model BridgeAccount {
   userId           String
   bridgeAccountId  String    @unique // Bridge API account ID
   name             String
-  balance          Decimal   @db.Decimal(15,2)
+  balance          Decimal   
   currency         String    @default("EUR")
   type             String    // checking, savings, credit_card, loan, investment
   iban             String?
   bankId           String?   // Bridge bank ID
   bankName         String?   // Bank name for display
-  lastSyncAt       DateTime? @db.Timestamptz
+  lastSyncAt       DateTime? 
   isActive         Boolean   @default(true)
-  createdAt        DateTime  @default(now()) @db.Timestamptz
-  updatedAt        DateTime  @updatedAt @db.Timestamptz
+  createdAt        DateTime  @default(now()) 
+  updatedAt        DateTime  @updatedAt 
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -235,8 +235,8 @@ model AssetTypeCategory {
   description String?
   color       String?
   icon        String?
-  createdAt   DateTime @default(now()) @db.Timestamptz
-  updatedAt   DateTime @updatedAt @db.Timestamptz
+  createdAt   DateTime @default(now()) 
+  updatedAt   DateTime @updatedAt 
 
   @@map("asset_type_categories")
 }
@@ -264,19 +264,19 @@ model Debt {
   assetId         String
   name            String
   debtType        DebtType         @default(LOAN)
-  initialAmount   Decimal          @db.Decimal(15,2)
-  currentAmount   Decimal          @db.Decimal(15,2)
-  interestRate    Decimal          @db.Decimal(5,4) // Taux d'intérêt annuel en %
+  initialAmount   Decimal          
+  currentAmount   Decimal          
+  interestRate    Decimal           // Taux d'intérêt annuel en % (0.00 to 99.99)
   duration        Int              // Durée en mois
   amortizationType AmortizationType @default(PROGRESSIVE)
-  startDate       DateTime         @db.Timestamptz
-  endDate         DateTime         @db.Timestamptz
-  monthlyPayment  Decimal?         @db.Decimal(15,2) // Mensualité (calculée ou fixe)
+  startDate       DateTime         
+  endDate         DateTime         
+  monthlyPayment  Decimal?          // Mensualité (calculée ou fixe)
   currency        String           @default("EUR")
   lender          String?          // Nom du prêteur
   notes           String?
-  createdAt       DateTime         @default(now()) @db.Timestamptz
-  updatedAt       DateTime         @updatedAt @db.Timestamptz
+  createdAt       DateTime         @default(now()) 
+  updatedAt       DateTime         @updatedAt 
 
   asset           Asset            @relation(fields: [assetId], references: [id], onDelete: Cascade)
   payments        DebtPayment[]
@@ -288,15 +288,15 @@ model DebtPayment {
   id                String    @id @default(cuid())
   debtId            String
   paymentNumber     Int       // Numéro de l'échéance
-  paymentDate       DateTime  @db.Timestamptz // Date prévue de paiement
-  totalAmount       Decimal   @db.Decimal(15,2) // Montant total de l'échéance
-  principalAmount   Decimal   @db.Decimal(15,2) // Part du capital
-  interestAmount    Decimal   @db.Decimal(15,2) // Part des intérêts
-  remainingBalance  Decimal   @db.Decimal(15,2) // Capital restant dû après paiement
+  paymentDate       DateTime   // Date prévue de paiement
+  totalAmount       Decimal    // Montant total de l'échéance
+  principalAmount   Decimal    // Part du capital
+  interestAmount    Decimal    // Part des intérêts
+  remainingBalance  Decimal    // Capital restant dû après paiement
   isPaid            Boolean   @default(false)
-  actualPaymentDate DateTime? @db.Timestamptz // Date réelle de paiement
-  createdAt         DateTime  @default(now()) @db.Timestamptz
-  updatedAt         DateTime  @updatedAt @db.Timestamptz
+  actualPaymentDate DateTime?  // Date réelle de paiement
+  createdAt         DateTime  @default(now()) 
+  updatedAt         DateTime  @updatedAt 
 
   debt              Debt      @relation(fields: [debtId], references: [id], onDelete: Cascade)
 
@@ -329,11 +329,11 @@ model Alert {
   data         Json?
   status       String   @default("new") // 'new', 'read', 'snoozed', 'dismissed'
   actions      Json?
-  createdAt    DateTime @default(now()) @db.Timestamptz
-  readAt       DateTime? @db.Timestamptz
-  snoozedUntil DateTime? @db.Timestamptz
-  dismissedAt  DateTime? @db.Timestamptz
-  updatedAt    DateTime @updatedAt @db.Timestamptz
+  createdAt    DateTime @default(now()) 
+  readAt       DateTime? 
+  snoozedUntil DateTime? 
+  dismissedAt  DateTime? 
+  updatedAt    DateTime @updatedAt 
 
   user         User           @relation(fields: [userId], references: [id], onDelete: Cascade)
   alertActions AlertAction[]
@@ -351,12 +351,12 @@ model AlertPreferences {
   userId       String
   alertType    String   // 'concentration_risk', 'performance_anomaly', etc.
   enabled      Boolean  @default(true)
-  threshold    Decimal? @db.Decimal(10,4)
+  threshold    Decimal? 
   frequency    String   @default("immediate") // 'immediate', 'daily', 'weekly', 'never'
   emailEnabled Boolean  @default(true)
   pushEnabled  Boolean  @default(true)
-  createdAt    DateTime @default(now()) @db.Timestamptz
-  updatedAt    DateTime @updatedAt @db.Timestamptz
+  createdAt    DateTime @default(now()) 
+  updatedAt    DateTime @updatedAt 
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -368,7 +368,7 @@ model AlertAction {
   id        String   @id @default(cuid())
   alertId   String
   action    String
-  timestamp DateTime @default(now()) @db.Timestamptz
+  timestamp DateTime @default(now()) 
   metadata  Json?
 
   alert Alert @relation(fields: [alertId], references: [id], onDelete: Cascade)
@@ -383,17 +383,17 @@ model TaxProfile {
   userId    String   @unique
   
   // Profil fiscal
-  tmi       Decimal  @db.Decimal(5,4) // Tranche marginale d'imposition
+  tmi       Decimal   // Tranche marginale d'imposition
   foyer     String   // 'single', 'married', 'pacs'
-  nbParts   Decimal  @db.Decimal(3,2) // Nombre de parts fiscales
-  income    Decimal  @db.Decimal(15,2) // Revenus annuels
+  nbParts   Decimal   // Nombre de parts fiscales
+  income    Decimal   // Revenus annuels
   
   // Préférences d'optimisation
   riskTolerance     String   // 'low', 'medium', 'high'
   optimizationGoals Json?    // ['reduce_IR', 'reduce_IFI', 'transmission', etc.]
   
-  createdAt DateTime @default(now()) @db.Timestamptz
-  updatedAt DateTime @updatedAt @db.Timestamptz
+  createdAt DateTime @default(now()) 
+  updatedAt DateTime @updatedAt 
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -409,8 +409,8 @@ model TaxOptimization {
   category    String   // 'PER', 'deficitFoncier', 'donation', etc.
   
   // Données de l'optimisation
-  estimatedSavings Decimal @db.Decimal(15,2)
-  actualSavings    Decimal? @db.Decimal(15,2)
+  estimatedSavings Decimal 
+  actualSavings    Decimal? 
   status          String   // 'proposed', 'in_progress', 'completed', 'dismissed'
   
   // Métadonnées
@@ -418,12 +418,12 @@ model TaxOptimization {
   notes       String?
   
   // Suivi
-  proposedAt  DateTime @default(now()) @db.Timestamptz
-  startedAt   DateTime? @db.Timestamptz
-  completedAt DateTime? @db.Timestamptz
+  proposedAt  DateTime @default(now()) 
+  startedAt   DateTime? 
+  completedAt DateTime? 
   
-  createdAt   DateTime @default(now()) @db.Timestamptz
-  updatedAt   DateTime @updatedAt @db.Timestamptz
+  createdAt   DateTime @default(now()) 
+  updatedAt   DateTime @updatedAt 
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -441,8 +441,8 @@ model TaxSimulation {
   scenarios Json     // Scénarios testés
   results   Json     // Résultats de simulation
   
-  createdAt DateTime @default(now()) @db.Timestamptz
-  updatedAt DateTime @updatedAt @db.Timestamptz
+  createdAt DateTime @default(now()) 
+  updatedAt DateTime @updatedAt 
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -456,18 +456,18 @@ model TaxCalculation {
   
   // Calculs fiscaux
   taxYear   Int      // Année fiscale
-  IR        Decimal  @db.Decimal(15,2) // Impôt sur le revenu
-  IFI       Decimal  @db.Decimal(15,2) // Impôt sur la fortune immobilière
-  plusValues Decimal @db.Decimal(15,2) // Plus-values
-  prelevementsSociaux Decimal @db.Decimal(15,2) // Prélèvements sociaux
-  taxeFonciere Decimal @db.Decimal(15,2) // Taxe foncière
-  total     Decimal  @db.Decimal(15,2) // Total des impôts
+  IR        Decimal   // Impôt sur le revenu
+  IFI       Decimal   // Impôt sur la fortune immobilière
+  plusValues Decimal  // Plus-values
+  prelevementsSociaux Decimal  // Prélèvements sociaux
+  taxeFonciere Decimal  // Taxe foncière
+  total     Decimal   // Total des impôts
   
   // Contexte patrimonial
   patrimonySnapshot Json // Snapshot du patrimoine au moment du calcul
   
-  createdAt DateTime @default(now()) @db.Timestamptz
-  updatedAt DateTime @updatedAt @db.Timestamptz
+  createdAt DateTime @default(now()) 
+  updatedAt DateTime @updatedAt 
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -484,13 +484,13 @@ model UserBehavior {
   mostViewedWidgets     String   @default("[]")
   leastViewedWidgets    String   @default("[]")
   preferredLayout       String   @default("extended") // 'compact' | 'extended' | 'custom'
-  lastActiveDate        DateTime @default(now()) @db.Timestamptz
+  lastActiveDate        DateTime @default(now()) 
   totalSessions         Int      @default(0)
-  averageSessionTime    Decimal  @default(0) @db.Decimal(10,2)
+  averageSessionTime    Decimal  @default(0) 
   behaviorCluster       String   @default("beginner") // 'conservative' | 'balanced' | 'aggressive' | 'trader' | 'beginner'
   preferences           Json     // UserPreferences
-  createdAt             DateTime @default(now()) @db.Timestamptz
-  updatedAt             DateTime @updatedAt @db.Timestamptz
+  createdAt             DateTime @default(now()) 
+  updatedAt             DateTime @updatedAt 
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -506,8 +506,8 @@ model DashboardLayout {
   breakpoints Json      // Configuration responsive
   isActive    Boolean   @default(false)
   isDefault   Boolean   @default(false)
-  createdAt   DateTime  @default(now()) @db.Timestamptz
-  updatedAt   DateTime  @updatedAt @db.Timestamptz
+  createdAt   DateTime  @default(now()) 
+  updatedAt   DateTime  @updatedAt 
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -524,13 +524,13 @@ model DashboardSuggestion {
   title       String
   description String
   impact      String   // 'high', 'medium', 'low'
-  confidence  Decimal  @db.Decimal(3,2) // 0.00 to 1.00
+  confidence  Decimal   // 0.00 to 1.00
   data        Json?    // Données spécifiques à la suggestion
   actions     Json?    // Actions possibles
   isRead      Boolean  @default(false)
   isDismissed Boolean  @default(false)
-  createdAt   DateTime @default(now()) @db.Timestamptz
-  updatedAt   DateTime @updatedAt @db.Timestamptz
+  createdAt   DateTime @default(now()) 
+  updatedAt   DateTime @updatedAt 
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -547,7 +547,7 @@ model WidgetInteraction {
   action     String   // 'view', 'click', 'hover', 'resize', 'move'
   duration   Int?     // En millisecondes
   metadata   Json?    // Données additionnelles
-  timestamp  DateTime @default(now()) @db.Timestamptz
+  timestamp  DateTime @default(now()) 
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -559,15 +559,15 @@ model WidgetInteraction {
 // Dashboard Analytics
 model DashboardAnalytics {
   id                  String   @id @default(cuid())
-  date                DateTime @db.Date
+  date                DateTime 
   totalUsers          Int      @default(0)
   activeUsers         Int      @default(0)
-  averageSessionTime  Decimal  @db.Decimal(10,2) @default(0)
+  averageSessionTime  Decimal   @default(0)
   mostUsedWidgets     Json     // Array of { widgetId, count }
   layoutDistribution  Json     // Layout usage statistics
   deviceBreakdown     Json     // Desktop, tablet, mobile usage
-  createdAt           DateTime @default(now()) @db.Timestamptz
-  updatedAt           DateTime @updatedAt @db.Timestamptz
+  createdAt           DateTime @default(now()) 
+  updatedAt           DateTime @updatedAt 
 
   @@unique([date])
   @@index([date])

@@ -71,6 +71,13 @@ export class YahooFinanceService {
   }
 
   /**
+   * Vérifie si l'API Yahoo Finance est configurée
+   */
+  isConfigured(): boolean {
+    return !!this.rapidApiKey
+  }
+
+  /**
    * Récupère les cours en temps réel pour une liste de symboles
    */
   async getQuotes(symbols: string[]): Promise<YahooQuote[]> {
@@ -133,8 +140,9 @@ export class YahooFinanceService {
    * Recherche des symboles boursiers
    */
   async searchSymbols(query: string): Promise<YahooSearchResult[]> {
-    if (!this.rapidApiKey) {
-      throw new Error('Yahoo Finance API key is not configured')
+    if (!this.isConfigured()) {
+      console.warn('Yahoo Finance API key is not configured')
+      return []
     }
 
     try {
@@ -162,6 +170,14 @@ export class YahooFinanceService {
    * Met à jour les cours des actions pour un utilisateur
    */
   async updateStockPrices(userId: string): Promise<{ success: boolean; message: string; updatedAssets: number }> {
+    if (!this.isConfigured()) {
+      return {
+        success: false,
+        message: 'Yahoo Finance API non configuré - clé RapidAPI manquante',
+        updatedAssets: 0
+      }
+    }
+
     try {
       // Récupération des actifs actions de l'utilisateur
       const stockAssets = await prisma.asset.findMany({

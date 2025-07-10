@@ -5,7 +5,6 @@ import { useSession, signOut } from "@/hooks/useAuth"
 import { Button } from "@/components/ui/Button"
 import { Building2, PieChart, Users, TrendingUp, Settings, CreditCard, Zap, Rocket, Calculator, LineChart } from "lucide-react"
 import AlertCenter from "@/components/alerts/AlertCenter"
-// import { DevModeControls } from "@/components/DevModeControls"
 
 export function Navbar() {
   const { data: session, status } = useSession()
@@ -22,14 +21,6 @@ export function Navbar() {
           </div>
 
           <div className="flex items-center space-x-4">
-            {/* Dev access link only shown when not authenticated */}
-            {!session && (
-              <Link href="/dev-access">
-                <Button variant="ghost" size="sm" className="text-xs">
-                  🚀 Dev
-                </Button>
-              </Link>
-            )}
             {session && (
               <div className="hidden md:flex items-center space-x-1">
                 <Link href="/dashboard">

@@ -1,4 +1,4 @@
-import { getServerSession } from '@/lib/auth-helper';
+import { getServerSession } from '@/lib/auth';
 import { redirect } from 'next/navigation';
 import BackupManager from '@/components/BackupManager';
 

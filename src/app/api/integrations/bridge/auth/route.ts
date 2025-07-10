@@ -1,9 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { getToken } from "@/lib/auth"
-import { BridgeService } from "@/lib/integrations/bridge"
+import { connectBridge } from "@/lib/integrations/bridge"
 import { prisma } from "@/lib/prisma"
-
-const bridgeService = new BridgeService()
 
 // GET: Redirect to Bridge authorization
 export async function GET(request: NextRequest) {
@@ -17,8 +15,16 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "Non autorisé" }, { status: 401 })
     }
 
+    const bridgeConnection = await connectBridge()
+    
+    if (!bridgeConnection.configured) {
+      return NextResponse.json({ 
+        error: bridgeConnection.error || 'Service Bridge non disponible' 
+      }, { status: 503 })
+    }
+
     const userId = token.id as string
-    const authUrl = bridgeService.generateAuthUrl(userId)
+    const authUrl = bridgeConnection.bridge.generateAuthUrl(userId)
 
     return NextResponse.json({ authUrl })
   } catch (error) {
@@ -39,6 +45,14 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Non autorisé" }, { status: 401 })
     }
 
+    const bridgeConnection = await connectBridge()
+    
+    if (!bridgeConnection.configured) {
+      return NextResponse.json({ 
+        error: bridgeConnection.error || 'Service Bridge non disponible' 
+      }, { status: 503 })
+    }
+
     const body = await request.json()
     const { code, state } = body
 
@@ -49,7 +63,7 @@ export async function POST(request: NextRequest) {
     const userId = token.id as string
 
     // Exchange authorization code for tokens
-    const authResponse = await bridgeService.exchangeAuthCode(code)
+    const authResponse = await bridgeConnection.bridge.exchangeAuthCode(code)
 
     // Store tokens in database
     await prisma.bridgeConnection.create({
@@ -63,7 +77,7 @@ export async function POST(request: NextRequest) {
     })
 
     // Trigger initial sync
-    const syncResult = await bridgeService.syncAccounts(userId)
+    const syncResult = await bridgeConnection.bridge.syncAccounts(userId)
 
     return NextResponse.json({
       success: true,

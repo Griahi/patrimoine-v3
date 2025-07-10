@@ -1,23 +1,18 @@
 "use client"
 
-import { createContext, useContext, useEffect, useState, useCallback } from 'react'
+import { createContext, useContext, useEffect, useState, useCallback, ReactNode } from 'react'
 import { Session } from '@/lib/auth'
 
 interface SessionContextType {
-  session: Session | null
+  data: Session | null
   status: 'loading' | 'authenticated' | 'unauthenticated'
-  refetch: () => Promise<void>
+  update: () => Promise<void>
 }
 
-const SessionContext = createContext<SessionContextType>({
-  session: null,
-  status: 'loading',
-  refetch: async () => {}
-})
+const SessionContext = createContext<SessionContextType | undefined>(undefined)
 
 interface SessionProviderProps {
-  children: React.ReactNode
-  session?: any
+  children: ReactNode
 }
 
 export function SessionProvider({ children }: SessionProviderProps) {
@@ -44,7 +39,7 @@ export function SessionProvider({ children }: SessionProviderProps) {
       if (response.ok) {
         const data = await response.json()
         if (data.hasSession && data.sessionData) {
-          console.log('✅ SessionProvider: Valid session found via API')
+          console.log('✅ SessionProvider: Valid session found')
           setSession({
             user: {
               id: data.sessionData.userId,
@@ -57,43 +52,6 @@ export function SessionProvider({ children }: SessionProviderProps) {
           setStatus('authenticated')
           setHasInitialized(true)
           return
-        }
-      }
-      
-      // Si pas de session trouvée via l'API, regarder directement le cookie auth-session
-      if (typeof window !== 'undefined') {
-        const cookies = document.cookie.split(';').reduce((acc, cookie) => {
-          const [key, value] = cookie.trim().split('=')
-          if (key && value) acc[key] = value
-          return acc
-        }, {} as Record<string, string>)
-        
-        const authSession = cookies['auth-session']
-        if (authSession) {
-          try {
-            const sessionData = JSON.parse(decodeURIComponent(authSession))
-            const expiresAt = new Date(sessionData.expires)
-            
-            if (expiresAt > new Date()) {
-              console.log('✅ SessionProvider: Valid session found via cookie')
-              setSession({
-                user: {
-                  id: sessionData.userId,
-                  email: sessionData.email,
-                  name: sessionData.name,
-                  image: null
-                },
-                expires: sessionData.expires
-              })
-              setStatus('authenticated')
-              setHasInitialized(true)
-              return
-            } else {
-              console.log('⚠️ SessionProvider: Session cookie expired')
-            }
-          } catch (e) {
-            console.warn('Failed to parse auth-session cookie:', e)
-          }
         }
       }
       
@@ -114,48 +72,43 @@ export function SessionProvider({ children }: SessionProviderProps) {
   }, [isFetching])
 
   useEffect(() => {
-    // Ne fetch que si pas encore initialisé
-    if (!hasInitialized && !isFetching) {
-      console.log('🔄 SessionProvider: Initial session fetch')
+    if (!hasInitialized) {
       fetchSession()
     }
-    
-    // Écouter les changements d'authentification
+  }, [fetchSession, hasInitialized])
+
+  // Écouter les changements d'authentification
+  useEffect(() => {
     const handleAuthChange = () => {
-      console.log('🔄 SessionProvider: Auth changed event received')
-      // Reset initialization flag pour permettre un nouveau fetch
-      setHasInitialized(false)
-      setTimeout(() => {
-        if (!isFetching) {
-          fetchSession()
-        }
-      }, 100) // Petit délai pour éviter les races conditions
+      console.log('🔄 SessionProvider: Auth changed, refetching session')
+      setHasInitialized(false) // Force refetch
     }
-    
+
+    // Écouter les événements personnalisés de changement d'authentification
     window.addEventListener('auth-changed', handleAuthChange)
     
     return () => {
       window.removeEventListener('auth-changed', handleAuthChange)
     }
-  }, [hasInitialized, isFetching, fetchSession])
+  }, [])
+
+  const value: SessionContextType = {
+    data: session,
+    status,
+    update: fetchSession
+  }
 
   return (
-    <SessionContext.Provider value={{ 
-      session, 
-      status, 
-      refetch: () => {
-        setHasInitialized(false)
-        return fetchSession()
-      }
-    }}>
+    <SessionContext.Provider value={value}>
       {children}
     </SessionContext.Provider>
   )
 }
 
-// Add default export for better compatibility
-export default SessionProvider
-
-export function useSessionContext() {
-  return useContext(SessionContext)
+export function useSession() {
+  const context = useContext(SessionContext)
+  if (context === undefined) {
+    throw new Error('useSession must be used within a SessionProvider')
+  }
+  return context
 } 
