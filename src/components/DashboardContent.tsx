@@ -6,9 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/Button"
 import { 
   TrendingUp, 
-  Users, 
-  Building2, 
-  PieChart as PieChartIcon,
+  Users,
   Plus,
   Euro,
   AlertTriangle,
@@ -19,30 +17,23 @@ import {
   Info
 } from "lucide-react"
 import Link from "next/link"
-import { calculateTotalPatrimony, calculateTotalDebts } from "@/lib/utils"
+import { calculateTotalPatrimony } from "@/lib/utils"
 import { 
-  formatCurrency, 
-  calculateAssetValue, 
-  calculateOwnershipPercentage, 
-  validateValuation 
+  formatCurrency 
 } from "@/utils/financial-calculations"
 import EntityFilter from "@/components/dashboard/EntityFilter"
 import { useDashboardEntityFilter } from "@/hooks/useEntityFilter"
-import { PatrimoineChart } from "@/components/charts/PatrimoineChart"
-import { PieChartPatrimoine } from "@/components/patrimoine/PieChartPatrimoine"
-import { 
-  processAssetsForFinancialMetrics, 
-  AssetForFinancial, 
-  EntityForFinancial,
-  CategoryData
-} from "@/utils/financial-utils"
+
+import { EnhancedTreemap } from "@/components/dashboard/enhanced-treemap"
+import { EnhancedTreemapFilters, EnhancedTreemapFiltersData, defaultFilters } from "@/components/dashboard/enhanced-treemap-filters"
+import { useEnhancedTreemapData } from "@/hooks/use-enhanced-treemap-data"
 
 interface Entity {
   id: string
   name: string
   type: 'INDIVIDUAL' | 'LEGAL_ENTITY'
   userId: string
-  metadata?: any
+  metadata?: Record<string, unknown>
   notes?: string
 }
 
@@ -106,7 +97,7 @@ export default function DashboardContent() {
     error: null
   })
   const [hasInitialized, setHasInitialized] = useState(false)
-  const [viewMode, setViewMode] = useState<'pie' | 'detailed'>('pie')
+  const [treemapFilters, setTreemapFilters] = useState<EnhancedTreemapFiltersData>(defaultFilters)
   
   // Entity filter state
   const {
@@ -114,6 +105,13 @@ export default function DashboardContent() {
     setSelectedEntityIds,
     hasSelection
   } = useDashboardEntityFilter()
+  
+  // Enhanced treemap data hook
+  const treemapData = useEnhancedTreemapData(
+    dashboardData.assets,
+    dashboardData.entities,
+    treemapFilters
+  )
 
   const loadDashboardData = useCallback(async () => {
     try {
@@ -457,71 +455,9 @@ export default function DashboardContent() {
   const totalDebts = dashboardData.debtsData.summary?.totalDebt || 0
   const patrimoineNet = totalPatrimoine - totalDebts
 
-  const assetsByType = dashboardData.assets.reduce((acc, asset) => {
-    const category = asset.assetType.category
-    if (!acc[category]) {
-      acc[category] = { count: 0, value: 0, name: category }
-    }
-    
-    const latestValuation = asset.valuations[0]
-    if (!latestValuation) return acc
 
-    const validatedValuation = validateValuation(latestValuation)
-    if (!validatedValuation.isValid) return acc
 
-    // Filtrer les ownerships par entités si spécifié
-    const relevantOwnerships = asset.ownerships ? asset.ownerships.filter((ownership) => 
-      !hasSelection || selectedEntityIds.length === 0 || selectedEntityIds.includes(ownership.ownerEntity?.id)
-    ) : []
 
-    const userOwnershipPercentage = calculateOwnershipPercentage(relevantOwnerships)
-    const assetValue = calculateAssetValue(validatedValuation.value, userOwnershipPercentage)
-    
-    acc[category].count += 1
-    acc[category].value += assetValue
-    return acc
-  }, {} as Record<string, { count: number; value: number; name: string }>)
-
-  // Préparer les données financières
-  const assetsForFinancial: AssetForFinancial[] = dashboardData.assets.map(asset => ({
-    id: asset.id,
-    name: asset.name,
-    assetType: {
-      id: asset.assetType.id,
-      name: asset.assetType.name,
-      category: asset.assetType.category,
-      color: asset.assetType.color
-    },
-    valuations: asset.valuations.map(val => ({
-      value: val.value,
-      valuationDate: val.valuationDate,
-      currency: val.currency
-    })),
-    ownerships: asset.ownerships.map(own => ({
-      percentage: own.percentage,
-      ownerEntity: {
-        id: own.ownerEntity.id,
-        name: own.ownerEntity.name,
-        type: own.ownerEntity.type
-      }
-    })),
-    debts: []
-  }))
-
-  const entitiesForFinancial: EntityForFinancial[] = dashboardData.entities.map(entity => ({
-    id: entity.id,
-    name: entity.name,
-    type: entity.type
-  }))
-
-  // Traiter les données financières
-  const financialData = processAssetsForFinancialMetrics(assetsForFinancial, hasSelection ? selectedEntityIds : [])
-  
-  // Gérer le clic sur une catégorie
-  const handleCategoryClick = (category: CategoryData) => {
-    console.log('Category clicked:', category)
-    // Ici on pourrait naviguer vers une page de détail ou ouvrir un modal
-  }
 
   return (
     <div className="container mx-auto px-4 py-6">
@@ -612,139 +548,147 @@ export default function DashboardContent() {
         </Card>
       </div>
 
-      {/* Répartition des actifs */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-        <Card>
+      {/* Répartition des actifs - Treemap pleine largeur */}
+      <Card className="mb-6">
+        <CardHeader>
+          <CardTitle className="flex items-center">
+            <Database className="h-5 w-5 mr-2" />
+            Répartition du Patrimoine
+          </CardTitle>
+          <CardDescription>
+            Visualisation hiérarchique de vos actifs
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {dashboardData.assets.length > 0 ? (
+            <div className="space-y-6">
+              <EnhancedTreemapFilters
+                filters={treemapFilters}
+                onFiltersChange={setTreemapFilters}
+                availableEntities={treemapData.availableEntities}
+                availableAssetTypes={treemapData.availableAssetTypes}
+                totalAssets={treemapData.totalAssets}
+                totalValue={treemapData.totalValue}
+                className="mb-4"
+              />
+              <EnhancedTreemap
+                assets={treemapData.filteredAssets}
+                responsive={true}
+                className="shadow-lg"
+              />
+              {treemapData.error && (
+                <div className="p-4 bg-red-50 border border-red-200 text-red-700 rounded-lg text-sm">
+                  <div className="font-medium">Erreur lors du chargement des données</div>
+                  <div className="mt-1">{treemapData.error.message}</div>
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="text-center text-gray-500 py-12">
+              <Database className="h-16 w-16 mx-auto mb-4 opacity-50" />
+              <p className="text-lg font-medium">Aucun actif à afficher</p>
+              <p className="text-sm text-gray-400 mt-2">
+                Commencez par ajouter des actifs pour voir votre treemap
+              </p>
+            </div>
+          )}
+        </CardContent>
+              </Card>
+
+      {/* Entités récentes */}
+      {dashboardData.entities.length > 0 && (
+        <Card className="mb-6">
           <CardHeader>
             <div className="flex items-center justify-between">
               <div>
                 <CardTitle className="flex items-center">
-                  <PieChartIcon className="h-5 w-5 mr-2" />
-                  Répartition par catégorie
+                  <Users className="h-5 w-5 mr-2" />
+                  Entités récentes
                 </CardTitle>
                 <CardDescription>
-                  Visualisation de la répartition de votre patrimoine
+                  Vos dernières entités créées ou modifiées
                 </CardDescription>
               </div>
-              <div className="flex items-center space-x-2">
-                <Button
-                  variant={viewMode === 'pie' ? 'default' : 'outline'}
-                  size="sm"
-                  onClick={() => setViewMode('pie')}
-                >
-                  <PieChartIcon className="h-4 w-4" />
+              <Link href="/entities">
+                <Button variant="outline" size="sm">
+                  Voir toutes
                 </Button>
-                <Button
-                  variant={viewMode === 'detailed' ? 'default' : 'outline'}
-                  size="sm"
-                  onClick={() => setViewMode('detailed')}
-                >
-                  <Building2 className="h-4 w-4" />
-                </Button>
-              </div>
+              </Link>
             </div>
           </CardHeader>
           <CardContent>
-            {Object.keys(assetsByType).length > 0 ? (
-              <div className="space-y-6">
-                {viewMode === 'pie' ? (
-                  <>
-                    {/* Graphique en secteurs */}
-                    <PatrimoineChart 
-                      data={Object.values(assetsByType).map((category, index) => ({
-                        name: category.name,
-                        value: category.value,
-                        percentage: totalPatrimoine > 0 ? (category.value / totalPatrimoine) * 100 : 0,
-                        color: `hsl(${(index * 60) % 360}, 70%, 50%)`
-                      }))}
-                    />
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {dashboardData.entities
+                .slice(0, 3) // Limiter à 3 entités maximum
+                .map((entity) => {
+                  // Calculer le nombre d'actifs par entité
+                  const entityAssets = dashboardData.assets.filter(asset => 
+                    asset.ownerships.some(ownership => ownership.ownerEntity.id === entity.id)
+                  )
+                  
+                  // Calculer la valeur totale des actifs de cette entité
+                  const entityValue = entityAssets.reduce((total, asset) => {
+                    const latestValuation = asset.valuations?.[0]
+                    if (!latestValuation) return total
                     
-                    {/* Liste détaillée */}
-                    <div className="space-y-3">
-                      {Object.values(assetsByType)
-                        .sort((a, b) => b.value - a.value)
-                        .map((category, index) => (
-                          <div key={category.name} className="flex justify-between items-center p-3 border rounded-lg">
-                            <div className="flex items-center space-x-3">
-                              <div 
-                                className="w-4 h-4 rounded-full" 
-                                style={{ backgroundColor: `hsl(${(index * 60) % 360}, 70%, 50%)` }}
-                              />
-                              <div>
-                                <div className="font-medium">{category.name}</div>
-                                <div className="text-sm text-gray-500">{category.count} actif{category.count > 1 ? 's' : ''}</div>
+                    const ownership = asset.ownerships.find(o => o.ownerEntity.id === entity.id)
+                    const ownershipPercentage = ownership?.percentage || 0
+                    const assetValue = parseFloat(latestValuation.value) || 0
+                    
+                    return total + (assetValue * ownershipPercentage / 100)
+                  }, 0)
+
+                  return (
+                    <Link key={entity.id} href={`/entities/${entity.id}`}>
+                      <Card className="hover:shadow-lg transition-shadow duration-200 cursor-pointer border-l-4 border-l-blue-500 h-full">
+                        <CardContent className="p-4">
+                          <div className="flex items-start justify-between mb-3">
+                            <div className="flex items-center space-x-2">
+                              <div className={`w-10 h-10 rounded-full flex items-center justify-center text-white font-semibold text-sm ${
+                                entity.type === 'INDIVIDUAL' ? 'bg-blue-500' : 'bg-purple-500'
+                              }`}>
+                                {entity.name.substring(0, 2).toUpperCase()}
                               </div>
-                            </div>
-                            <div className="text-right">
-                              <div className="font-bold">{formatCurrency(category.value)}</div>
-                              <div className="text-sm text-gray-500">
-                                {totalPatrimoine > 0 ? ((category.value / totalPatrimoine) * 100).toFixed(1) : '0'}%
+                              <div>
+                                <h3 className="font-semibold text-gray-900 truncate max-w-[140px]" title={entity.name}>
+                                  {entity.name}
+                                </h3>
+                                <p className="text-xs text-gray-500">
+                                  {entity.type === 'INDIVIDUAL' ? 'Personne physique' : 'Personne morale'}
+                                </p>
                               </div>
                             </div>
                           </div>
-                        ))}
-                    </div>
-                  </>
-                ) : (
-                  /* Vue détaillée */
-                  <div className="h-80">
-                    <PieChartPatrimoine
-                      categories={financialData.categories}
-                      title=""
-                      height={320}
-                      loading={dashboardData.loading}
-                      onCategoryClick={handleCategoryClick}
-                    />
-                  </div>
-                )}
-              </div>
-            ) : (
-              <div className="text-center text-gray-500 py-8">
-                <PieChartIcon className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                <p>Aucun actif à afficher</p>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center">
-              <Building2 className="h-5 w-5 mr-2" />
-              Entités récentes
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            {dashboardData.entities.length > 0 ? (
-              <div className="space-y-3">
-                {dashboardData.entities.slice(0, 5).map((entity) => (
-                  <div key={entity.id} className="flex justify-between items-center p-2 rounded border">
-                    <div>
-                      <div className="font-medium">{entity.name}</div>
-                      <div className="text-sm text-gray-500">
-                        {entity.type === 'INDIVIDUAL' ? 'Personne physique' : 'Personne morale'}
-                      </div>
-                    </div>
-                    <Link href={`/entities/${entity.id}`}>
-                      <Button variant="outline" size="sm">Voir</Button>
+                          
+                          <div className="space-y-2">
+                            <div className="flex items-center justify-between text-sm">
+                              <span className="text-gray-600">Actifs</span>
+                              <span className="font-medium text-gray-900">{entityAssets.length}</span>
+                            </div>
+                            <div className="flex items-center justify-between text-sm">
+                              <span className="text-gray-600">Valeur</span>
+                              <span className="font-semibold text-green-600">
+                                {formatCurrency(entityValue)}
+                              </span>
+                            </div>
+                          </div>
+                          
+                          {entity.notes && (
+                            <div className="mt-3 pt-3 border-t border-gray-100">
+                              <p className="text-xs text-gray-500 truncate" title={entity.notes}>
+                                {entity.notes}
+                              </p>
+                            </div>
+                          )}
+                        </CardContent>
+                      </Card>
                     </Link>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div className="text-center text-gray-500 py-8">
-                <Users className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                <p>Aucune entité créée</p>
-                <Link href="/entities" className="inline-block mt-2">
-                  <Button variant="outline" size="sm">
-                    Créer une entité
-                  </Button>
-                </Link>
-              </div>
-            )}
+                  )
+                })}
+            </div>
           </CardContent>
         </Card>
-      </div>
+      )}
 
       {/* Actions rapides */}
       <Card>

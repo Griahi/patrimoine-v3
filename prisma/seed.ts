@@ -1,4 +1,5 @@
 import { PrismaClient } from '../src/generated/prisma'
+import { EntityType, ValuationSource } from '../src/generated/prisma'
 import bcrypt from 'bcryptjs'
 
 const prisma = new PrismaClient()
@@ -111,26 +112,27 @@ async function main() {
   if (process.env.NODE_ENV === 'development') {
     console.log('🔐 Creating development test users...')
 
+    // 🛡️ UTILISATEURS DE DÉVELOPPEMENT AVEC MOTS DE PASSE SÉCURISÉS
     const testUsers = [
       {
         id: 'user-demo-1',
         email: 'test@example.com',
         name: 'Utilisateur Test',
-        password: 'password123',
+        password: 'SecureTestPassword2025!@#',
         role: 'user'
       },
       {
         id: 'user-demo-2',
         email: 'demo@patrimoine.com',
         name: 'Démo Patrimoine',
-        password: 'demo123',
+        password: 'SecureDemoPassword2025!@#',
         role: 'user'
       },
       {
         id: 'user-admin',
         email: 'admin@patrimoine.com',
         name: 'Admin Patrimoine',
-        password: 'SecureAdminPassword2025!',
+        password: 'SecureAdminPassword2025!@#$%',
         role: 'admin'
       }
     ]
@@ -166,7 +168,7 @@ async function main() {
       {
         id: 'entity-test-1',
         userId: 'user-demo-1',
-        type: 'PHYSICAL_PERSON',
+        type: EntityType.PHYSICAL_PERSON,
         name: 'Max Riahi',
         taxId: '123456789',
         metadata: {
@@ -178,7 +180,7 @@ async function main() {
       {
         id: 'entity-test-2',
         userId: 'user-demo-1',
-        type: 'PHYSICAL_PERSON',
+        type: EntityType.PHYSICAL_PERSON,
         name: 'Sophie Riahi',
         taxId: '987654321',
         metadata: {
@@ -190,7 +192,7 @@ async function main() {
       {
         id: 'entity-test-3',
         userId: 'user-demo-1',
-        type: 'LEGAL_ENTITY',
+        type: EntityType.LEGAL_ENTITY,
         name: 'SARL TechCorp',
         taxId: '12345678901234',
         metadata: {
@@ -208,7 +210,7 @@ async function main() {
       {
         id: 'entity-test-4',
         userId: 'user-demo-1',
-        type: 'PHYSICAL_PERSON',
+        type: EntityType.PHYSICAL_PERSON,
         name: 'Gilles Riahi',
         taxId: '456789123',
         metadata: {
@@ -221,7 +223,7 @@ async function main() {
       {
         id: 'entity-demo-1',
         userId: 'user-demo-2',
-        type: 'PHYSICAL_PERSON',
+        type: EntityType.PHYSICAL_PERSON,
         name: 'Jean Dupont',
         taxId: '111222333',
         metadata: {
@@ -233,7 +235,7 @@ async function main() {
       {
         id: 'entity-demo-2',
         userId: 'user-demo-2',
-        type: 'LEGAL_ENTITY',
+        type: EntityType.LEGAL_ENTITY,
         name: 'SAS Patrimoine Plus',
         taxId: '98765432101234',
         metadata: {
@@ -387,7 +389,7 @@ async function main() {
         value: 950000,
         currency: 'EUR',
         valuationDate: new Date('2024-01-01'),
-        source: 'MANUAL',
+        source: ValuationSource.MANUAL,
         notes: 'Estimation immobilière'
       },
       {
@@ -396,7 +398,7 @@ async function main() {
         value: 25000,
         currency: 'EUR',
         valuationDate: new Date('2024-01-01'),
-        source: 'API_BANK',
+        source: ValuationSource.API_BANK,
         notes: 'Solde compte courant'
       },
       {
@@ -405,7 +407,7 @@ async function main() {
         value: 9500,
         currency: 'EUR',
         valuationDate: new Date('2024-01-01'),
-        source: 'API_STOCK',
+        source: ValuationSource.API_STOCK,
         notes: 'Cours de clôture AAPL'
       },
       {
@@ -414,7 +416,7 @@ async function main() {
         value: 720000,
         currency: 'EUR',
         valuationDate: new Date('2024-01-01'),
-        source: 'MANUAL',
+        source: ValuationSource.MANUAL,
         notes: 'Estimation locative'
       }
     ]

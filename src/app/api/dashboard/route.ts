@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { getToken } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
-import { auth } from '@/lib/auth'
+import { auth, requireApiAuth } from '@/lib/auth'
 import { BehaviorTrackingService } from '@/services/dashboard/behavior-tracking'
 import { suggestionEngine } from '@/services/dashboard/suggestion-engine'
 import { 
@@ -122,37 +122,17 @@ async function getDashboardData(userId: string, entityIds?: string[]) {
 // GET /api/dashboard - Get user dashboard configuration
 export async function GET(request: NextRequest) {
   try {
-    console.log('Dashboard API called - checking session...')
+    console.log('Dashboard API called - using unified authentication...')
     
-    // Check for fallback session first
-    const fallbackSession = request.cookies.get('auth-session')?.value
-    let userId: string | null = null;
+    // 🛡️ AUTHENTIFICATION UNIFIÉE - Plus de systèmes multiples
+    const authResult = await requireApiAuth(request)
     
-    if (fallbackSession) {
-      try {
-        const sessionData = JSON.parse(fallbackSession)
-        // Check if session hasn't expired
-        const expiresAt = new Date(sessionData.expires)
-        if (expiresAt > new Date()) {
-          userId = sessionData.userId;
-          console.log('Using fallback session for user:', userId)
-        }
-      } catch (parseError) {
-        console.warn('Failed to parse fallback session:', parseError)
-      }
+    if ('errorResponse' in authResult) {
+      return authResult.errorResponse
     }
-
-    // If no fallback session, try regular session
-    if (!userId) {
-      const session = await auth()
-      console.log('Session:', session ? 'Found' : 'Not found', session?.user?.id)
-      
-      if (!session?.user?.id) {
-        console.log('No session or user ID found')
-        return NextResponse.json({ error: "Non autorisé" }, { status: 401 })
-      }
-      userId = session.user.id;
-    }
+    
+    const { userId } = authResult
+    console.log('✅ Authenticated user:', userId)
 
     const { searchParams } = new URL(request.url)
     const entityIdsParam = searchParams.get('entityIds')
@@ -238,12 +218,14 @@ export async function GET(request: NextRequest) {
 // POST /api/dashboard - Update dashboard configuration
 export async function POST(request: NextRequest) {
   try {
-    const session = await auth()
-    if (!session?.user?.id) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    // 🛡️ AUTHENTIFICATION UNIFIÉE 
+    const authResult = await requireApiAuth(request)
+    
+    if ('errorResponse' in authResult) {
+      return authResult.errorResponse
     }
-
-    const userId = session.user.id
+    
+    const { userId } = authResult
     const { layout, behavior, action } = await request.json()
 
     switch (action) {

@@ -86,7 +86,7 @@ services:
     restart: unless-stopped
     environment:
       PGADMIN_DEFAULT_EMAIL: admin@patrimoine.local
-      PGADMIN_DEFAULT_PASSWORD: admin123
+      PGADMIN_DEFAULT_PASSWORD: SecurePgAdminPassword2025!@#
       PGADMIN_CONFIG_SERVER_MODE: 'False'
     ports:
       - "5050:80"

@@ -41,6 +41,7 @@ model User {
   dashboardLayouts  DashboardLayout[]
   dashboardSuggestions DashboardSuggestion[]
   widgetInteractions WidgetInteraction[]
+  projectionScenarios ProjectionScenario[]
 
   @@map("users")
 }
@@ -572,4 +573,58 @@ model DashboardAnalytics {
   @@unique([date])
   @@index([date])
   @@map("dashboard_analytics")
+}
+
+// Modèles de projections "What-If"
+model ProjectionScenario {
+  id                String   @id @default(cuid())
+  userId           String
+  name             String
+  description      String?
+  type             String   // SIMPLE ou COMPLEX
+  isActive         Boolean  @default(true)
+  baselineSnapshot Json?    // Snapshot du patrimoine au moment de création
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  
+  user    User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  actions ProjectionAction[]
+  results ProjectionResult[]
+  
+  @@index([userId])
+  @@map("projection_scenarios")
+}
+
+model ProjectionAction {
+  id              String   @id @default(cuid())
+  scenarioId      String
+  type            String   // SELL, BUY, INVEST, YIELD, EXPENSE, TAX
+  name            String
+  executionDate   DateTime
+  targetAssetId   String?  // Pour SELL
+  assetType       String?  // Pour BUY
+  amount          Decimal
+  parameters      Json     // Paramètres spécifiques selon le type
+  order           Int      // Ordre d'exécution
+  
+  scenario ProjectionScenario @relation(fields: [scenarioId], references: [id], onDelete: Cascade)
+  
+  @@index([scenarioId])
+  @@map("projection_actions")
+}
+
+model ProjectionResult {
+  id              String   @id @default(cuid())
+  scenarioId      String
+  calculatedAt    DateTime @default(now())
+  timeHorizon     String   // 1M, 6M, 1Y, 5Y, 10Y
+  projectionData  Json     // Données de projection par période
+  metrics         Json     // Métriques calculées
+  insights        Json?    // Insights IA
+  
+  scenario ProjectionScenario @relation(fields: [scenarioId], references: [id], onDelete: Cascade)
+  
+  @@index([scenarioId])
+  @@unique([scenarioId, timeHorizon])
+  @@map("projection_results")
 }

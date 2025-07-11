@@ -5,33 +5,66 @@ import { prisma } from "@/lib/prisma"
 import bcrypt from "bcryptjs"
 import { z } from "zod"
 import { logger } from './logger'
+import { NextResponse } from "next/server"
 
-// Validation des variables d'environnement
+// 🛡️ VALIDATION RENFORCÉE DES VARIABLES D'ENVIRONNEMENT
 function validateEnvironment() {
   const jwtSecret = process.env.JWT_SECRET
+  const nextAuthSecret = process.env.NEXTAUTH_SECRET
   const nodeEnv = process.env.NODE_ENV
   
+  // Secrets faibles connus à rejeter
+  const WEAK_SECRETS = [
+    "fallback-secret-key-for-development",
+    "your-secret-key-here",
+    "dev-secret-key-2024",
+    "change-me-in-production",
+    "secret",
+    "password",
+    "123456"
+  ]
+  
   if (nodeEnv === 'production') {
-    // En production, secrets obligatoires et forts
-    if (!jwtSecret || jwtSecret === "fallback-secret-key-for-development") {
-      throw new Error('⚠️ PRODUCTION: JWT_SECRET must be set and cannot be the fallback development secret')
+    // 🚨 PRODUCTION: Validation stricte obligatoire
+    if (!jwtSecret) {
+      throw new Error('🚨 PRODUCTION CRITICAL: JWT_SECRET must be set in environment variables')
+    }
+    
+    if (WEAK_SECRETS.includes(jwtSecret)) {
+      throw new Error('🚨 PRODUCTION CRITICAL: JWT_SECRET cannot be a known weak secret')
     }
     
     if (jwtSecret.length < 32) {
-      throw new Error('⚠️ PRODUCTION: JWT_SECRET must be at least 32 characters long')
+      throw new Error('🚨 PRODUCTION CRITICAL: JWT_SECRET must be at least 32 characters long for security')
     }
     
-    if (!process.env.NEXTAUTH_SECRET) {
-      throw new Error('⚠️ PRODUCTION: NEXTAUTH_SECRET must be set')
+    if (!nextAuthSecret) {
+      throw new Error('🚨 PRODUCTION CRITICAL: NEXTAUTH_SECRET must be set in environment variables')
     }
     
-    if (process.env.NEXTAUTH_SECRET!.length < 32) {
-      throw new Error('⚠️ PRODUCTION: NEXTAUTH_SECRET must be at least 32 characters long')
+    if (WEAK_SECRETS.includes(nextAuthSecret)) {
+      throw new Error('🚨 PRODUCTION CRITICAL: NEXTAUTH_SECRET cannot be a known weak secret')
     }
+    
+    if (nextAuthSecret.length < 32) {
+      throw new Error('🚨 PRODUCTION CRITICAL: NEXTAUTH_SECRET must be at least 32 characters long for security')
+    }
+    
+    logger.info('✅ PRODUCTION: All authentication secrets validated successfully', undefined, 'AuthService')
+    
   } else {
-    // En développement, avertir si secrets faibles
-    if (!jwtSecret || jwtSecret === "fallback-secret-key-for-development") {
-      logger.warn('DEVELOPMENT: Using weak JWT_SECRET. Please set a strong secret in .env.local', undefined, 'AuthService')
+    // 🔧 DÉVELOPPEMENT: Validation avec avertissements
+    if (!jwtSecret || WEAK_SECRETS.includes(jwtSecret)) {
+      logger.error('⚠️ DEVELOPMENT SECURITY: Using weak or missing JWT_SECRET. Please set a strong secret in .env.local', undefined, 'AuthService')
+      logger.info('💡 Generate a strong secret with: openssl rand -base64 32', undefined, 'AuthService')
+    } else if (jwtSecret.length >= 32) {
+      logger.info('✅ DEVELOPMENT: Strong JWT_SECRET detected', undefined, 'AuthService')
+    }
+    
+    if (!nextAuthSecret || WEAK_SECRETS.includes(nextAuthSecret)) {
+      logger.warn('⚠️ DEVELOPMENT: Weak or missing NEXTAUTH_SECRET detected', undefined, 'AuthService')
+    } else if (nextAuthSecret && nextAuthSecret.length >= 32) {
+      logger.info('✅ DEVELOPMENT: Strong NEXTAUTH_SECRET detected', undefined, 'AuthService')
     }
   }
 }
@@ -39,7 +72,11 @@ function validateEnvironment() {
 // Valider l'environnement au démarrage
 validateEnvironment()
 
-const secret = new TextEncoder().encode(process.env.JWT_SECRET || "fallback-secret-key-for-development")
+// 🛡️ SECRET JWT SÉCURISÉ - Pas de fallback faible
+if (!process.env.JWT_SECRET) {
+  throw new Error('🚨 CRITICAL: JWT_SECRET environment variable is required. Generate one with: openssl rand -base64 32')
+}
+const secret = new TextEncoder().encode(process.env.JWT_SECRET)
 
 const loginSchema = z.object({
   email: z.string().email(),
@@ -304,6 +341,99 @@ export async function requireAuthFromRequest(request: NextRequest): Promise<{
   }
   
   return { userId: user.id };
+}
+
+/**
+ * 🛡️ AUTHENTIFICATION UNIFIÉE POUR LES ROUTES API
+ * Remplace les systèmes de fallback multiples par une seule source de vérité
+ */
+export async function requireApiAuth(request: NextRequest): Promise<{
+  userId: string;
+  user: AuthUser;
+} | {
+  errorResponse: NextResponse;
+}> {
+  try {
+    // Utiliser SEULEMENT le système JWT unifié
+    const session = await getSessionFromRequest(request)
+    
+    if (!session?.user?.id) {
+      logger.warn('API: Unauthorized access attempt', { 
+        url: request.url,
+        userAgent: request.headers.get('user-agent') 
+      }, 'AuthService')
+      
+      return {
+        errorResponse: NextResponse.json(
+          { 
+            error: 'Authentication required. Please log in to access this resource.',
+            code: 'AUTH_REQUIRED'
+          }, 
+          { status: 401 }
+        )
+      }
+    }
+
+    // Valider que l'utilisateur existe toujours en base
+    try {
+      const dbUser = await prisma.user.findUnique({
+        where: { id: session.user.id },
+        select: { id: true, email: true, name: true, isActive: true }
+      })
+      
+      if (!dbUser || !dbUser.isActive) {
+        logger.warn('API: User not found or inactive', { userId: session.user.id }, 'AuthService')
+        return {
+          errorResponse: NextResponse.json(
+            { 
+              error: 'User account not found or inactive',
+              code: 'USER_NOT_FOUND'
+            }, 
+            { status: 401 }
+          )
+        }
+      }
+
+      logger.info('API: Successful authentication', { 
+        userId: dbUser.id, 
+        email: dbUser.email 
+      }, 'AuthService')
+
+      return {
+        userId: dbUser.id,
+        user: {
+          id: dbUser.id,
+          email: dbUser.email,
+          name: dbUser.name || undefined
+        }
+      }
+      
+    } catch (dbError) {
+      logger.warn('API: Database validation failed, using session data', dbError, 'AuthService')
+      
+      // En cas d'erreur DB, on peut utiliser les données de session
+      return {
+        userId: session.user.id,
+        user: {
+          id: session.user.id,
+          email: session.user.email || '',
+          name: session.user.name || undefined
+        }
+      }
+    }
+    
+  } catch (error) {
+    logger.error('API: Authentication error', error, 'AuthService')
+    return {
+      errorResponse: NextResponse.json(
+        { 
+          error: 'Internal authentication error',
+          code: 'AUTH_ERROR'
+        }, 
+        { status: 500 }
+      )
+    }
+  }
 }
 
 // Alias pour compatibilité avec l'API existante

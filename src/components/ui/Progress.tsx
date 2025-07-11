@@ -5,30 +5,17 @@ import { cn } from '@/lib/utils';
 
 interface ProgressProps {
   value: number;
-  max?: number;
   className?: string;
-  size?: 'sm' | 'md' | 'lg';
+  max?: number;
 }
 
-export function Progress({ value, max = 100, className, size = 'md' }: ProgressProps) {
+export function Progress({ value, className = '', max = 100 }: ProgressProps) {
   const percentage = Math.min(Math.max((value / max) * 100, 0), 100);
   
-  const sizeClasses = {
-    sm: 'h-2',
-    md: 'h-3',
-    lg: 'h-4'
-  };
-
   return (
-    <div
-      className={cn(
-        'relative w-full overflow-hidden rounded-full bg-gray-200',
-        sizeClasses[size],
-        className
-      )}
-    >
+    <div className={`w-full bg-gray-200 rounded-full overflow-hidden ${className}`}>
       <div
-        className="h-full bg-blue-500 transition-all duration-300 ease-in-out"
+        className="bg-blue-600 h-full transition-all duration-300 ease-out"
         style={{ width: `${percentage}%` }}
       />
     </div>

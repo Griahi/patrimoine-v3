@@ -47,6 +47,12 @@ export function Navbar() {
                     <span>Actifs</span>
                   </Button>
                 </Link>
+                <Link href="/accounts">
+                  <Button variant="ghost" size="sm" className="flex items-center space-x-1">
+                    <CreditCard className="h-4 w-4" />
+                    <span>Comptes</span>
+                  </Button>
+                </Link>
                 <Link href="/predictions">
                   <Button variant="ghost" size="sm" className="flex items-center space-x-1">
                     <LineChart className="h-4 w-4" />

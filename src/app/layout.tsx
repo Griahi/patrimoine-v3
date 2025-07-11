@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { SessionProvider } from "@/components/SessionProvider";
-import { Navbar } from "@/components/Navbar";
+import { AppLayout } from "@/components/AppLayout";
 import { Toaster } from "@/components/ui/Toaster";
 import { AuthPersistence } from "@/components/layout/AuthPersistence";
 import ChatWidget from "@/components/ai/ChatWidget";
@@ -31,8 +31,9 @@ export default function RootLayout({
     <html lang="en">
       <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
         <SessionProvider>
-          <Navbar />
-          {children}
+          <AppLayout>
+            {children}
+          </AppLayout>
           <AuthPersistence />
           <Toaster />
           <ChatWidget />
